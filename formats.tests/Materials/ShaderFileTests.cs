@@ -31,13 +31,28 @@ textures/common/hidden
 {
 	surfaceparm nodraw
 }
+
+textures/test/clamped
+{
+	qer_editorimage test/editor_sin_prefijo.tga
+	{
+		map clampy textures/test/clamped@base.tga
+	}
+}
 ";
+
+    [Fact]
+    public void IgnoraModificadoresDeMapAntesDeLaRuta()
+    {
+        var defs = ShaderFile.Parse(Sample).ToDictionary(d => d.Name);
+        Assert.Equal("textures/test/clamped@base.tga", defs["textures/test/clamped"].FirstMap);
+    }
 
     [Fact]
     public void LeeNombreParmsYPrimerMapQueNoEsLightmap()
     {
         var defs = ShaderFile.Parse(Sample).ToDictionary(d => d.Name);
-        Assert.Equal(3, defs.Count);
+        Assert.Equal(4, defs.Count);
 
         var lit = defs["textures/test/lit"];
         Assert.Equal("textures/test/base", lit.FirstMap);

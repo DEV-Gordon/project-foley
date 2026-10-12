@@ -1,8 +1,8 @@
 # BSP (IBSP v59)
 
-Especificación tal como se entiende hoy. Todo lo de aquí se dedujo de los datos de
-`maps/burnville.bsp` y se validó con comprobaciones cruzadas; no hay referencia directa
-de ioquake3 para v59 (ioquake3 cubre v46). Confianza por sección entre paréntesis.
+Especificación tal como se entiende hoy. Se dedujo de los datos de `maps/burnville.bsp`
+y luego se contrastó con los 49 BSP de la instalación (ver "Corpus"); no hay referencia
+directa de ioquake3 para v59 (ioquake3 cubre v46). Confianza por sección entre paréntesis.
 
 ## Cabecera y directorio (confirmado)
 
@@ -92,10 +92,26 @@ originales.
 - No se dibujan superficies de shaders con `sky` ni `nodraw` (burnville: 4 y 1 superficies).
 - Sin vertex color ni lightmap: el modo moderno descarta los lightmaps (hito 8).
 
+## Corpus (confirmado con tests)
+
+`formats.tests/Bsp/BspAllMapsCorpusTests.cs` lee los 49 BSP de la instalación, de uno en uno.
+
+- Los 49 son `IBSP` v59 y se leen sin error con el layout de arriba.
+- 43 son mapas jugables (campaña y multijugador). En todos, las superficies cubren
+  exactamente vértices e índices, ningún índice se sale de su superficie y hay `worldspawn`.
+- 6 son **marcadores** de 4248 bytes (`allied_start`, `ru_stalingrad`, `uk_6ab`, `uk_sas`,
+  `us_intro`, `us_mid`): una sola caja cerrada de `textures/common/blackish`
+  (416×256×192 unidades, 24 vértices, 36 índices) con `worldspawn` e `info_player_start`.
+  Se excluyen de las comprobaciones de mapa jugable; el test verifica que sigan siendo esa caja.
+  Su uso en el original (¿salas de transición entre misiones?) está sin determinar.
+- Materiales: todos los usados resuelven a textura, cielo o `nodraw`, salvo 4 que no existen
+  en ningún pk3 (ver `shader.md`).
+- Comprobado visualmente además de burnville: `brecourt`, `stalingrad`, `mp/mp_carentan`.
+
 ## Pendiente
 
 - Significado de flags de superficie/contenido (hace falta para decidir qué no se dibuja:
   sky, nodraw, clip). De momento el importador decide por nombre y por `.shader`.
-- Contrastar con los otros 48 BSP.
-- Lightmaps (lump 1): formato y empaquetado.
+- Lightmaps (lump 1): formato y empaquetado. Diferido al modo clásico (hito 8).
 - Terreno/patches: no se ha visto ninguno distinto de los triangle soups.
+- Lumps de colisión (planos, brushes, nodos): hito 3.

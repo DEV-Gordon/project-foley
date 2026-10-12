@@ -67,7 +67,11 @@ public static class ShaderFile
                     break;
                 case "map":
                 case "clampmap":
-                    if (!parts[1].StartsWith('$')) current.FirstMap ??= parts[1].ToLowerInvariant();
+                    // CoD admite modificadores antes de la ruta: "map clamp <ruta>", "map clampy <ruta>".
+                    // Se toma el primer argumento que parezca ruta; los valores "$..." ($lightmap, $whiteimage) no cuentan.
+                    if (parts[1].StartsWith('$')) break;
+                    var mapPath = parts.Skip(1).FirstOrDefault(p => p.Contains('/') || p.Contains('\\'));
+                    if (mapPath is not null) current.FirstMap ??= mapPath.Replace('\\', '/').ToLowerInvariant();
                     break;
             }
         }
