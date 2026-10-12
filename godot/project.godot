@@ -25,7 +25,9 @@ project/assembly_name="project-foley"
 
 [physics]
 
+common/physics_ticks_per_second=125
 3d/physics_engine="Jolt Physics"
+common/physics_interpolation=true
 
 [rendering]
 
