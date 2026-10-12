@@ -116,6 +116,27 @@ public sealed class TerrainCollide
 
         var edgeRecs = new Edge[ea.Count];
 
+        // --- Aristas: inicio, dirección unitaria, longitud y base perpendicular (antes que los triángulos,
+        // que guardan referencias a ellas).
+        for (var i = 0; i < ea.Count; i++)
+        {
+            var start = verts[ea[i]];
+            var dir = Sub(verts[eb[i]], start);
+            var len = Normalize(ref dir);
+            var perp = PerpendicularVector(dir);
+            edgeRecs[i] = new Edge
+            {
+                Start = start,
+                Dir = dir,
+                Length = len,
+                Perp = perp,
+                Binormal = new Vec3(
+                    (float)((double)dir.Y * perp.Z - (double)dir.Z * perp.Y),
+                    (float)((double)dir.Z * perp.X - (double)dir.X * perp.Z),
+                    (float)((double)dir.X * perp.Y - (double)dir.Y * perp.X)),
+            };
+        }
+
         // --- Triángulos.
         var anyDown = false;
         var anyUp = false;
@@ -188,26 +209,6 @@ public sealed class TerrainCollide
         }
         Mins = mins;
         Maxs = maxs;
-
-        // --- Aristas: inicio, dirección unitaria, longitud y base perpendicular.
-        for (var i = 0; i < ea.Count; i++)
-        {
-            var start = verts[ea[i]];
-            var dir = Sub(verts[eb[i]], start);
-            var len = Normalize(ref dir);
-            var perp = PerpendicularVector(dir);
-            edgeRecs[i] = new Edge
-            {
-                Start = start,
-                Dir = dir,
-                Length = len,
-                Perp = perp,
-                Binormal = new Vec3(
-                    (float)((double)dir.Y * perp.Z - (double)dir.Z * perp.Y),
-                    (float)((double)dir.Z * perp.X - (double)dir.X * perp.Z),
-                    (float)((double)dir.X * perp.Y - (double)dir.Y * perp.X)),
-            };
-        }
 
         Edge? FindEdge(int a, int b)
         {

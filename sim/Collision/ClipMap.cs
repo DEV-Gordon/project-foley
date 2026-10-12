@@ -61,33 +61,55 @@ public sealed class ClipMap
 
     public CollisionPlane[] Planes { get; }
     public CollisionBrush[] Brushes { get; }
-    /// <summary>Piezas de terreno (malla de triángulos). Las curvas aún no están portadas.</summary>
+    /// <summary>Piezas de terreno (malla de triángulos).</summary>
     public TerrainCollide[] Terrains { get; }
+    /// <summary>Curvas (rejillas de puntos de control).</summary>
+    public PatchCollide[] Curves { get; }
+
+    /// <summary>Pieza de colisión no-brush (lump 24): terreno o curva, en el orden del lump.</summary>
+    private readonly record struct Piece(TerrainCollide? Terrain, PatchCollide? Curve)
+    {
+        public Vec3 Mins => Terrain?.Mins ?? Curve!.Mins;
+        public Vec3 Maxs => Terrain?.Maxs ?? Curve!.Maxs;
+        public int Contents => Terrain?.Contents ?? Curve!.Contents;
+        public int SurfaceFlags => Terrain?.SurfaceFlags ?? Curve!.SurfaceFlags;
+    }
+
+    private readonly Piece[] _pieces;
 
     private readonly float _gridMinX, _gridMinY;
     private readonly int _gridW, _gridH;
     private readonly int[][] _cells;
-    private readonly int[][] _terrainCells;
+    private readonly int[][] _pieceCells;
     private readonly int[] _stamp;
-    private readonly int[] _terrainStamp;
+    private readonly int[] _pieceStamp;
     private int _checkCount;
     private int _traceCount; // DAT_014bd720: marca de vértices/aristas de terreno ya probados en este trazado
     private readonly List<int> _candidates = new();
-    private readonly List<int> _terrainCandidates = new();
+    private readonly List<int> _pieceCandidates = new();
 
-    public ClipMap(CollisionPlane[] planes, CollisionBrush[] brushes, TerrainCollide[]? terrains = null)
+    public ClipMap(CollisionPlane[] planes, CollisionBrush[] brushes, TerrainCollide[]? terrains = null, PatchCollide[]? curves = null)
+        : this(planes, brushes,
+            (terrains ?? Array.Empty<TerrainCollide>()).Select(t => new Piece(t, null))
+                .Concat((curves ?? Array.Empty<PatchCollide>()).Select(c => new Piece(null, c))).ToArray())
+    {
+    }
+
+    private ClipMap(CollisionPlane[] planes, CollisionBrush[] brushes, Piece[] pieces)
     {
         Planes = planes;
         Brushes = brushes;
-        Terrains = terrains ?? Array.Empty<TerrainCollide>();
+        _pieces = pieces;
+        Terrains = pieces.Where(p => p.Terrain is not null).Select(p => p.Terrain!).ToArray();
+        Curves = pieces.Where(p => p.Curve is not null).Select(p => p.Curve!).ToArray();
         _stamp = new int[brushes.Length];
-        _terrainStamp = new int[Terrains.Length];
+        _pieceStamp = new int[pieces.Length];
 
-        if (brushes.Length == 0 && Terrains.Length == 0)
+        if (brushes.Length == 0 && pieces.Length == 0)
         {
             _gridW = _gridH = 1;
             _cells = new[] { Array.Empty<int>() };
-            _terrainCells = new[] { Array.Empty<int>() };
+            _pieceCells = new[] { Array.Empty<int>() };
             return;
         }
 
@@ -97,7 +119,7 @@ public sealed class ClipMap
             minX = MathF.Min(minX, b.Mins.X); minY = MathF.Min(minY, b.Mins.Y);
             maxX = MathF.Max(maxX, b.Maxs.X); maxY = MathF.Max(maxY, b.Maxs.Y);
         }
-        foreach (var t in Terrains)
+        foreach (var t in pieces)
         {
             minX = MathF.Min(minX, t.Mins.X); minY = MathF.Min(minY, t.Mins.Y);
             maxX = MathF.Max(maxX, t.Maxs.X); maxY = MathF.Max(maxY, t.Maxs.Y);
@@ -108,7 +130,7 @@ public sealed class ClipMap
         _gridH = System.Math.Max(1, (int)MathF.Ceiling((maxY - minY) / CellSize) + 1);
 
         _cells = BuildCells(brushes.Length, i => (brushes[i].Mins, brushes[i].Maxs));
-        _terrainCells = BuildCells(Terrains.Length, i => (Terrains[i].Mins, Terrains[i].Maxs));
+        _pieceCells = BuildCells(pieces.Length, i => (pieces[i].Mins, pieces[i].Maxs));
     }
 
     private int[][] BuildCells(int count, Func<int, (Vec3 min, Vec3 max)> bounds)
@@ -156,10 +178,23 @@ public sealed class ClipMap
             brushes[i] = new CollisionBrush(first, b.SideCount, contents, min, max);
         }
 
-        // Piezas de terreno (CMod_LoadLeafpatchesAndTerrain @0x411fd0). Curvas: TODO(fidelidad), sin portar.
-        var terrains = new List<TerrainCollide>();
+        // Piezas de terreno y curvas, en el orden del lump (CMod_LoadLeafpatchesAndTerrain @0x411fd0).
+        var pieces = new List<Piece>();
         foreach (var p in bsp.CollisionPatches)
         {
+            var mat = bsp.Materials[p.MaterialIndex];
+            if (p.Type == BspCollisionPatch.TypeCurve)
+            {
+                // Dim0 = ancho, Dim1 = alto, Field12 = primer punto, Field8 = umbral de subdivisión.
+                var points = new Vec3[p.Dim0 * p.Dim1];
+                for (var k = 0; k < points.Length; k++)
+                {
+                    var o = (int)(p.Field12 + k) * 3;
+                    points[k] = new Vec3(bsp.CollisionVerts[o], bsp.CollisionVerts[o + 1], bsp.CollisionVerts[o + 2]);
+                }
+                pieces.Add(new Piece(null, new PatchCollide(p.Dim0, p.Dim1, points, (int)p.Field8, (int)mat.ContentFlags, (int)mat.SurfaceFlags)));
+                continue;
+            }
             if (p.Type != BspCollisionPatch.TypeTerrain) continue;
             var verts = new Vec3[p.Dim0];
             for (var k = 0; k < verts.Length; k++)
@@ -169,10 +204,9 @@ public sealed class ClipMap
             }
             var idx = new int[p.Dim1];
             for (var k = 0; k < idx.Length; k++) idx[k] = bsp.CollisionIndices[p.Field12 + k];
-            var mat = bsp.Materials[p.MaterialIndex];
-            terrains.Add(new TerrainCollide(verts, idx, (int)mat.ContentFlags, (int)mat.SurfaceFlags));
+            pieces.Add(new Piece(new TerrainCollide(verts, idx, (int)mat.ContentFlags, (int)mat.SurfaceFlags), null));
         }
-        return new ClipMap(planes.ToArray(), brushes, terrains.ToArray());
+        return new ClipMap(planes.ToArray(), brushes, pieces.ToArray());
     }
 
     private static int SideFlags(BspFile bsp, int sideIndex)
@@ -245,8 +279,8 @@ public sealed class ClipMap
             }
         }
 
-        if (Terrains.Length > 0 && tw.Fraction > 0 && !tw.AllSolid && !IsPointTrace(tw))
-            TraceTerrains(ref tw);
+        if (_pieces.Length > 0 && tw.Fraction > 0 && !tw.AllSolid && !IsPointTrace(tw))
+            TracePieces(ref tw);
 
         // endpos a partir del start/end originales, sin ajustar.
         Vec3 endPos;
@@ -260,19 +294,21 @@ public sealed class ClipMap
         return new TraceResult(tw.Fraction, endPos, tw.Plane, tw.StartSolid, tw.AllSolid, tw.Contents);
     }
 
-    // Los trazados de punto contra terreno usan otra rutina (@0x419580), sin portar: TODO(fidelidad).
+    // Los trazados de punto contra terreno y curvas usan otras rutinas (@0x419580, @0x415400), sin portar: TODO(fidelidad).
     private static bool IsPointTrace(TraceWork tw) =>
         tw.Size0 == Vec3.Zero && tw.Size1 == Vec3.Zero;
 
     /// <summary>
-    /// Terreno: cápsula de radio size[1].x y media altura size[1].z (CM_Trace @0x41e960, @0x41a2d0),
-    /// solo piezas cuyos límites tocan los del barrido (@0x41b690) y cuyo contenido entra en la máscara;
-    /// al bajar la fracción toma el contenido y las banderas de superficie de la pieza (@0x41b860).
+    /// Piezas no-brush en el orden del lump (@0x41b860): solo las que tocan los límites del barrido
+    /// (@0x41b690) y cuyo contenido entra en la máscara; al bajar la fracción toma el contenido y las
+    /// banderas de superficie de la pieza.
+    /// Terreno: cápsula de radio size[1].x y media altura size[1].z (CM_Trace @0x41e960, @0x41a2d0).
+    /// Curva: caja, como CM_TraceThroughPatchCollide (@0x415a40).
     /// </summary>
-    private void TraceTerrains(ref TraceWork tw)
+    private void TracePieces(ref TraceWork tw)
     {
-        GatherTerrainCandidates(tw.BoundsMin, tw.BoundsMax);
-        if (_terrainCandidates.Count == 0) return;
+        GatherPieceCandidates(tw.BoundsMin, tw.BoundsMax);
+        if (_pieceCandidates.Count == 0) return;
         _traceCount++;
         var delta = new Vec3(
             (float)((double)tw.End.X - tw.Start.X), (float)((double)tw.End.Y - tw.Start.Y), (float)((double)tw.End.Z - tw.Start.Z));
@@ -287,13 +323,31 @@ public sealed class ClipMap
             Fraction = tw.Fraction,
             CheckCount = _traceCount,
         };
-        foreach (var i in _terrainCandidates)
+        foreach (var i in _pieceCandidates)
         {
-            var t = Terrains[i];
-            if ((t.Contents & tw.Mask) == 0) continue;
-            if (tw.BoundsMin.X > t.Maxs.X || tw.BoundsMax.X < t.Mins.X ||
-                tw.BoundsMin.Y > t.Maxs.Y || tw.BoundsMax.Y < t.Mins.Y ||
-                tw.BoundsMin.Z > t.Maxs.Z || tw.BoundsMax.Z < t.Mins.Z) continue;
+            var piece = _pieces[i];
+            if ((piece.Contents & tw.Mask) == 0) continue;
+            var pmin = piece.Mins;
+            var pmax = piece.Maxs;
+            if (tw.BoundsMin.X > pmax.X || tw.BoundsMax.X < pmin.X ||
+                tw.BoundsMin.Y > pmax.Y || tw.BoundsMax.Y < pmin.Y ||
+                tw.BoundsMin.Z > pmax.Z || tw.BoundsMax.Z < pmin.Z) continue;
+
+            if (piece.Curve is { } curve)
+            {
+                var frac = tw.Fraction;
+                if (curve.Trace(tw.Start, tw.End, tw.Offsets, ref frac, out var normal) && frac < tw.Fraction)
+                {
+                    tw.Fraction = frac;
+                    tw.Plane = new CollisionPlane(normal, 0, 0, curve.SurfaceFlags);
+                    tw.Contents = curve.Contents;
+                }
+                if (tw.Fraction == 0) break;
+                continue;
+            }
+
+            var t = piece.Terrain!;
+            sweep.Fraction = tw.Fraction;
             var before = sweep.Fraction;
             sweep.StartSolid = false;
             t.Trace(ref sweep);
@@ -308,25 +362,25 @@ public sealed class ClipMap
         }
     }
 
-    private void GatherTerrainCandidates(Vec3 min, Vec3 max)
+    private void GatherPieceCandidates(Vec3 min, Vec3 max)
     {
-        _terrainCandidates.Clear();
+        _pieceCandidates.Clear();
         if (++_checkCount == int.MaxValue)
         {
             Array.Clear(_stamp);
-            Array.Clear(_terrainStamp);
+            Array.Clear(_pieceStamp);
             _checkCount = 1;
         }
         CellRange(min.X, min.Y, max.X, max.Y, out var x0, out var y0, out var x1, out var y1);
         for (var y = y0; y <= y1; y++)
             for (var x = x0; x <= x1; x++)
-                foreach (var t in _terrainCells[y * _gridW + x])
+                foreach (var t in _pieceCells[y * _gridW + x])
                 {
-                    if (_terrainStamp[t] == _checkCount) continue;
-                    _terrainStamp[t] = _checkCount;
-                    _terrainCandidates.Add(t);
+                    if (_pieceStamp[t] == _checkCount) continue;
+                    _pieceStamp[t] = _checkCount;
+                    _pieceCandidates.Add(t);
                 }
-        _terrainCandidates.Sort();
+        _pieceCandidates.Sort();
     }
 
     private struct TraceWork

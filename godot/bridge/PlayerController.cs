@@ -62,7 +62,7 @@ public partial class PlayerController : Node
 			_spawnYaw = Parse(start.Get("angle") ?? "0");
 		}
 		Respawn();
-		GD.Print($"[PlayerController] {_map.Brushes.Length} brushes de colisión; inicio en {_spawnOrigin}");
+		GD.Print($"[PlayerController] colisión: {_map.Brushes.Length} brushes, {_map.Terrains.Length} terrenos, {_map.Curves.Length} curvas; inicio en {_spawnOrigin}");
 	}
 
 	private void Respawn()

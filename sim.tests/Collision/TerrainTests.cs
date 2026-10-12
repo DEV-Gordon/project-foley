@@ -61,6 +61,94 @@ public class TerrainTests
         Assert.True(ps.Origin.X > 100);
     }
 
+    [Theory]
+    [InlineData(124f, -16084f)]   // justo sobre la arista
+    [InlineData(124.5f, -16084f)]
+    [InlineData(123.5f, -16084f)]
+    public void LaCapsulaChocaConLaAristaEntreDosTriangulos(float x, float y)
+    {
+        // Cresta suave de burnville (pieza 594): el contacto cae fuera de ambos triángulos y solo lo
+        // detecta la prueba contra la arista (antes las aristas quedaban sin enlazar y se atravesaba).
+        var v = new[] { new Vec3(112, -16112, 16), new Vec3(112, -16072, 20), new Vec3(152, -16112, 16), new Vec3(152, -16072, 16) };
+        var map = new ClipMap(Array.Empty<CollisionPlane>(), Array.Empty<CollisionBrush>(),
+            new[] { new TerrainCollide(v, new[] { 0, 1, 2, 2, 1, 3 }, ClipMap.ContentsSolid, 0) });
+        var tr = map.Trace(new Vec3(x, y, 60), new Vec3(x, y, -300), Mins, Maxs, ClipMap.MaskPlayerSolid);
+        Assert.True(tr.Hit);
+        Assert.InRange(tr.EndPos.Z, 18.5f, 19.5f);
+        Assert.True(tr.Plane.Normal.Z > 0.99f);
+    }
+
+    [Theory]
+    [InlineData(8f)]
+    [InlineData(30f)]
+    public void SobreUnaPendienteLimpiaElJugadorNoDespegaNiResbala(float degrees)
+    {
+        var tan = MathF.Tan(degrees * MathF.PI / 180f);
+        Vec3 P(float x, float y) => new(x, y, x * tan);
+        var verts = new[] { P(-2048, -2048), P(2048, -2048), P(-2048, 2048), P(2048, 2048) };
+        var map = new ClipMap(Array.Empty<CollisionPlane>(), Array.Empty<CollisionBrush>(),
+            new[] { new TerrainCollide(verts, new[] { 0, 2, 1, 1, 2, 3 }, ClipMap.ContentsSolid, 0) });
+        var pm = new Pmove(new PmoveConfig(), map);
+        var ps = new PlayerState { Origin = new Vec3(0, 0, 40), JumpTime = -10000 };
+        for (var i = 0; i < 100; i++) pm.Move(ps, new UserCmd(ps.CommandTime + 8, 0, 0, 0, 0, 0, 0));
+        var rest = ps.Origin;
+        var air = 0;
+        for (var i = 0; i < 300; i++)
+        {
+            // quieto 1 s, luego cuesta abajo (yaw 180°)
+            pm.Move(ps, new UserCmd(ps.CommandTime + 8, 0, 32768, 0, i < 125 ? (sbyte)0 : (sbyte)127, 0, 0));
+            if (i == 124) Assert.True(MathF.Abs(ps.Origin.X - rest.X) < 0.01f, "resbala estando quieto");
+            if (!ps.OnGround) air++;
+        }
+        Assert.Equal(0, air);
+        // rapidez de Quake 3 a lo largo de la pendiente: 190 en total, 190·cos θ en horizontal
+        var h = MathF.Sqrt(ps.Velocity.X * ps.Velocity.X + ps.Velocity.Y * ps.Velocity.Y);
+        var expected = 190f * MathF.Cos(degrees * MathF.PI / 180f);
+        Assert.InRange(h, expected - 1, expected + 1);
+    }
+
+    [CorpusFact]
+    public void CaminandoPorElTerrenoDeBurnvilleCasiNuncaSePierdeElSuelo()
+    {
+        using var pk3 = new Pk3Collection(Pk3Locator.FindPk3Directory(Cod1Corpus.Root!)!);
+        var bsp = BspFile.Read(pk3.ReadAllBytes("maps/burnville.bsp"));
+        var map = ClipMap.FromBsp(bsp);
+        var pm = new Pmove(new PmoveConfig(), map);
+        var rnd = new Random(1);
+        int steps = 0, hopSteps = 0;
+        foreach (var s in bsp.Surfaces.Where(s => bsp.Materials[s.MaterialIndex].Name.Contains("/ground/")).Take(400))
+        {
+            var a = bsp.Vertices[(int)s.FirstVertex + bsp.Indices[(int)s.FirstIndex]];
+            if (a.Nz < 0.85f) continue;
+            var ps = new PlayerState { Origin = new Vec3(a.X, a.Y, a.Z + 40), JumpTime = -10000 };
+            for (var i = 0; i < 125; i++) pm.Move(ps, new UserCmd(ps.CommandTime + 8, 0, 0, 0, 0, 0, 0));
+            if (!ps.OnGround) continue;
+            var yaw = rnd.Next(65536);
+            int streak = 0;
+            var takeoffZ = 0f;
+            for (var i = 0; i < 125; i++)
+            {
+                var z = ps.Origin.Z;
+                pm.Move(ps, new UserCmd(ps.CommandTime + 8, 0, yaw, 0, 127, 0, 0));
+                steps++;
+                if (!ps.OnGround)
+                {
+                    if (streak++ == 0) takeoffZ = z;
+                }
+                else if (streak > 0)
+                {
+                    // saltito: pocos pasos en el aire y aterriza a la misma altura (no es una caída real)
+                    if (streak <= 10 && MathF.Abs(ps.Origin.Z - takeoffZ) < 4) hopSteps += streak;
+                    streak = 0;
+                }
+            }
+        }
+        // Con las aristas del terreno sin enlazar el jugador perdía el suelo en ~26 % de los pasos y daba
+        // saltitos constantes; lo que queda son empujones contra paredes empinadas (normal z < 0.7).
+        Assert.True(steps > 5000, $"solo {steps} pasos");
+        Assert.True(hopSteps < steps * 0.01, $"saltitos {hopSteps} de {steps}");
+    }
+
     [CorpusFact]
     public void CasiTodoElSueloVisibleDeBurnvilleTieneColision()
     {
@@ -68,6 +156,7 @@ public class TerrainTests
         var bsp = BspFile.Read(pk3.ReadAllBytes("maps/burnville.bsp"));
         var map = ClipMap.FromBsp(bsp);
         Assert.Equal(1112, map.Terrains.Length);
+        Assert.Equal(512, map.Curves.Length);
 
         int total = 0, miss = 0;
         foreach (var s in bsp.Surfaces)
@@ -84,7 +173,8 @@ public class TerrainTests
                 if (!tr.Hit || tr.EndPos.Z < cz - 4) miss++;
             }
         }
-        // Sin terreno faltaba el 69 %. Lo que queda son sobre todo curvas (aún sin portar).
-        Assert.True(miss < total * 0.03, $"sin colisión {miss} de {total}");
+        // Sin terreno faltaba el 69 %; sin curvas, el 1.9 %. Lo que queda son superficies decorativas sobre
+        // un suelo sólido algo más bajo (p. ej. tablones del granero a 48 con el suelo a 42).
+        Assert.True(miss < total * 0.01, $"sin colisión {miss} de {total}");
     }
 }

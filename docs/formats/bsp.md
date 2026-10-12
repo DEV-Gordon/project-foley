@@ -136,11 +136,12 @@ Todo brush tiene al menos 6 lados.
 | 2 | `uint8` | tipo = 1 | tipo = 0 |
 | 4 | `uint16` | nº de vértices | ancho de la rejilla |
 | 6 | `uint16` | nº de índices | alto de la rejilla |
-| 8 | `uint32` | primer vértice (lump 25) | sin identificar (pasa a CM_GeneratePatchFacets) |
+| 8 | `uint32` | primer vértice (lump 25) | umbral de subdivisión en unidades (2–12 en burnville; @0x4131f0) |
 | 12 | `uint32` | primer índice (lump 26) | primer vértice (lump 25) |
 
 Los índices del terreno son relativos a su primer vértice, de 3 en 3. Burnville: 1112 de
 terreno y 512 curvas. Validado en los 49 BSP (rangos dentro de los lumps 25 y 26).
+Los puntos de control de una curva van por filas: `punto[j·ancho + i]`, `ancho` y `alto` impares.
 
 ### Lump 27, modelo (48 B)
 

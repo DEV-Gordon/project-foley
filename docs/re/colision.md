@@ -17,8 +17,8 @@ Portado de ioquake3, `code/qcommon/cm_trace.c`:
 | `CM_TestBoxInBrush` (prueba de posición, `start == end`) | `ClipMap.TestBoxInBrush` |
 | `SURFACE_CLIP_EPSILON = 0.125` (`cm_local.h`) | `ClipMap.SurfaceClipEpsilon` |
 
-Cápsulas y patches de Quake 3 no se portan: CoD1 no usa patches en los BSP revisados y el
-modelo de jugador es una caja (confirmar con REA).
+Contra brushes el jugador es una caja. El terreno y las curvas (lump 24) se tratan aparte; ver
+"Terreno y curvas" más abajo.
 
 ## Datos del BSP (ver `docs/formats/bsp.md`)
 
@@ -60,8 +60,7 @@ visible no tenía colisión (el jugador lo atravesaba).
 
 **Carga** (`CMod_LoadLeafpatchesAndTerrain`, `0x411fd0`): tipo 1 → terreno
 (`CM_GenerateTerrainCollide`, `0x418860`); tipo 0 → curva (`CM_GeneratePatchFacets`, como
-el `cm_patch.c` de Quake 3; **sin portar**). Contenido y banderas de superficie salen del
-material de la pieza.
+el `cm_patch.c` de Quake 3). Contenido y banderas de superficie salen del material de la pieza.
 
 **Terreno** (`TerrainCollide.cs`):
 - Por triángulo: plano `(v2 − v0) × (v1 − v0)` normalizado; base dual para coordenadas
@@ -84,4 +83,39 @@ no solapan los del barrido (`0x41b690`, sin margen).
 Consecuencias observadas en el port: el jugador se apoya a 0.125 del suelo, igual que en
 brushes; un trazado de posición (delta nulo) **no** detecta el terreno, como en el original.
 
-Pendiente: curvas (tipo 0) y trazados de punto contra terreno (`0x419580`).
+Corrección (hito 3): el port enlazaba cada triángulo con sus aristas antes de crearlas, así que
+ninguna arista se probaba. Cerca de cualquier cresta o valle entre triángulos el contacto cae
+fuera de ambos triángulos y solo lo detecta la arista: la cápsula atravesaba el suelo o lo
+perdía. Caminando por burnville el jugador estaba "en el aire" en el 26 % de los pasos (resbalaba
+y frenaba en pendientes suaves); corregido, ~3 %, y lo que queda son caídas reales y empujones
+contra paredes de más de 45°. Test: `TerrainTests.LaCapsulaChocaConLaAristaEntreDosTriangulos` y
+`CaminandoPorElTerrenoDeBurnvilleCasiNuncaSePierdeElSuelo`.
+
+**Curvas** (`PatchCollide.cs`): port de `cm_patch.c` y `cm_polylib.c` de ioquake3 comprobado
+función a función contra CoDSP.exe 1.5:
+
+| Paso | Dirección | Igual que ioquake3 salvo |
+|---|---|---|
+| CM_GeneratePatchCollide | `0x415170` | límites iniciales ±262144; se amplían ±1 al final (igual) |
+| CM_SetGridWrapWidth / RemoveDegenerateColumns / TransposeGrid | `0x413070` / `0x4134d0` / `0x412f10` | — (ε = 0.1) |
+| CM_SubdivideGridColumns | `0x4131f0` | umbral **de la pieza** (campo 8 del lump 24) en vez de 16, y si la columna no necesita subdivisión **se conserva** (Quake 3 la colapsa) |
+| CM_PatchCollideFromGrid | `0x414950` | `CM_GridPlane` irresoluble devuelve −1 sin aviso |
+| CM_FindPlane / FindPlane2 / PlaneEqual | `0x413830` / `0x413750` / `0x413600` | — (ε plano 0.1, normal 0.0001, distancia 0.02; 4096 planos, 1024 facetas) |
+| CM_ValidateFacet / BaseWindingForPlane | `0x414050` / `0x416b00` | `MAX_MAP_BOUNDS` = 131072 (Quake 3: 65535) |
+| CM_AddFacetBevels | `0x414240` | un bisel de arista solo se añade si algún punto de la faceta queda detrás a más de 0.1 |
+| CM_TraceThroughPatchCollide | `0x415a40` | `leaveFrac` empieza en la fracción actual (no en 1); solo copia la normal del plano |
+| CM_CheckFacetPlane | `0x415910` | — (ε 0.125) |
+
+Contra curvas el jugador es una **caja** (rama sin cápsula, `offsets[signbits]`), no la cápsula
+del terreno. El despachador de piezas (`0x41b860`) es el mismo para terreno y curvas: filtra por
+límites (`0x41b690`) y, si baja la fracción, toma contenido y banderas de la pieza. Como el
+terreno, un trazado de posición no detecta la curva.
+
+En burnville: 512 curvas, 7026 facetas, como mucho 23 bordes por faceta; con terreno y curvas el
+suelo visible sin colisión baja al 0.7 % (tablones decorativos sobre un suelo sólido 6 unidades
+más bajo).
+
+Diferencia deliberada: las piezas se recorren después de los brushes y en el orden del lump, no
+hoja a hoja como el árbol BSP del original (mismo criterio que con los brushes).
+
+Pendiente: trazados de punto contra terreno (`0x419580`) y curvas (`0x415400`).

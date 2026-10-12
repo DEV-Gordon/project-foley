@@ -99,6 +99,20 @@ MP44 agachado andando 47 (190 · 0.96 · 0.65 · 0.4) y de lado 38 (× 0.8): coi
 PM_CmdScale y con que la velocidad estable sea la deseada (fricción 5.5 frente a
 aceleración 9 · max(v, 100)).
 
+## Pendientes (comprobado al investigar "resbala y frena en pendientes suaves")
+
+- En pendientes limpias (brush o terreno, 3°–30°) el jugador no despega ni se mueve estando
+  quieto, y al caminar mantiene 190 u/s a lo largo de la pendiente (190·cos θ en horizontal),
+  como Quake 3. Test: `TerrainTests.SobreUnaPendienteLimpiaElJugadorNoDespegaNiResbala`.
+- Al aterrizar desde una caída, si la caja queda dentro de la ventana de 0.25 del trazado de
+  suelo sin haber chocado en el SlideMove, la velocidad vertical no se recorta. En el paso
+  siguiente PM_WalkMove (`0x20003f60`) recorta contra el suelo y, si la dirección no se invierte,
+  conserva la rapidez: en pendientes de más de ~1.8° esa caída se convierte en un deslizamiento
+  breve (21 unidades al caer 40 sobre 3°). PM_GroundTrace (`0x20004f30`) y PM_CrashLand
+  (`0x200049b0`) no tocan la velocidad antes de eso, así que el original se comporta igual.
+  Confianza: probable (leído en el binario, sin comparar contra una demo).
+- La causa real del problema eran las aristas del terreno sin enlazar (ver `colision.md`).
+
 ## Aritmética
 
 El binario usa la FPU x87 con precisión extendida (80 bits) y redondea a float solo al

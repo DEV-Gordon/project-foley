@@ -59,6 +59,7 @@ public partial class MapViewer : Node3D
 			bsp = BspFile.Read(pk3.ReadAllBytes(MapPath));
 			var resolver = new MaterialResolver(pk3);
 			BuildMap(bsp, pk3, resolver);
+			BuildModels(bsp, pk3);
 		}
 		GD.Print($"[MapViewer] {MapPath}: {bsp.Surfaces.Length} superficies, {bsp.Vertices.Length} vértices, {sw.ElapsedMilliseconds} ms");
 
