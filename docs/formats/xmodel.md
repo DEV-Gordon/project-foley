@@ -11,6 +11,16 @@ Las texturas de los materiales están en `skins/<material>` (el nombre ya trae l
 `.dds`, `.tga` o `.jpg`). El prefijo antes de `@` es el tipo de superficie (`wood@`, `metal@`);
 `_masked` indica alfa recortado (`foliage_masked@`).
 
+**Alfa invertido en el follaje.** En las skins cuyo tipo empieza por `foliage`
+(`foliage_masked@`, `foliage_detail@`) la forma (hojas, ramas, hierba) tiene **alfa 0** y el
+fondo **alfa 255**, relleno con un color plano. El resto de skins `_masked` (`metal_masked@`,
+`wood_masked@`, `objective_incomplete_masked@`...) y las texturas del BSP usan la convención
+normal (forma con alfa 255). Evidencia: inspección visual del color y del alfa de las 14 skins
+de follaje y las 14 `_masked` de otros tipos que usa burnville, más un recuento automático de
+las 175 skins de follaje de la instalación (fondo plano con alfa alto en casi todas). El visor
+invierte el alfa de esas skins al cargarlas y recorta al 50 %. Confianza: **probable**; falta
+localizar en el renderer del ejecutable dónde se aplica (REA).
+
 Fuentes: lectura de los 1019 xmodels de la instalación (todos cuadran byte a byte con esta
 descripción) y, para las mallas, el cargador del ejecutable (CoDSP 1.5 en memoria:
 `0x47f8a0` carga el archivo, `0x47f190` lee una superficie, `0x47f000` lee un hueso + posición,

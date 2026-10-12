@@ -118,8 +118,16 @@ public partial class MapViewer
 			Roughness = 1f,
 			TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
 		};
+		// Tipo de superficie: lo que va antes de '@' (foliage_masked, metal_masked, glass...).
+		var at = skin.IndexOf('@');
+		var type = at > 0 ? skin[..at].ToLowerInvariant() : "";
+		var foliage = type.StartsWith("foliage", StringComparison.Ordinal);
+		var masked = foliage || type.Contains("masked", StringComparison.Ordinal);
+
 		var path = "skins/" + skin;
-		var tex = pk3.Contains(path) ? LoadTexture(pk3, path) : null;
+		// Las skins de follaje guardan la forma con alfa 0 y el fondo con alfa 255 (docs/formats/xmodel.md).
+		var key = foliage ? path + "|inv" : path;
+		var tex = pk3.Contains(path) ? LoadTexture(pk3, path, invertAlpha: foliage) : null;
 		if (tex is null)
 		{
 			m.AlbedoColor = new Color(1f, 0f, 1f);
@@ -127,14 +135,19 @@ public partial class MapViewer
 		else
 		{
 			m.AlbedoTexture = tex;
-			if (_alphaTextures.Contains(path))
+			if (masked && _alphaTextures.Contains(key))
 			{
+				// Recorte por alfa al 50 % (alphaFunc GE128 de los shaders de id Tech 3).
 				m.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
 				m.AlphaScissorThreshold = 0.5f;
 			}
+			else if (type.StartsWith("glass", StringComparison.Ordinal) && _alphaTextures.Contains(key))
+			{
+				m.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+			}
 		}
-		// Las tarjetas de follaje se ven por las dos caras (supuesto de presentación).
-		if (skin.Contains("_masked@", StringComparison.OrdinalIgnoreCase))
+		// Las tarjetas recortadas se ven por las dos caras (supuesto de presentación).
+		if (masked)
 			m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
 		_skinMaterials[skin] = m;
 		return m;

@@ -171,9 +171,14 @@ public partial class MapViewer : Node3D
 
 	private readonly HashSet<string> _alphaTextures = new();
 
-	private Texture2D? LoadTexture(Pk3Collection pk3, string path)
+	/// <param name="invertAlpha">
+	/// Invierte el canal alfa (skins de follaje de los modelos, que guardan la forma con alfa 0;
+	/// ver docs/formats/xmodel.md). Se cachea aparte con la clave <c>ruta|inv</c>.
+	/// </param>
+	private Texture2D? LoadTexture(Pk3Collection pk3, string path, bool invertAlpha = false)
 	{
-		if (_textures.TryGetValue(path, out var cached)) return cached;
+		var key = invertAlpha ? path + "|inv" : path;
+		if (_textures.TryGetValue(key, out var cached)) return cached;
 
 		Texture2D? result = null;
 		try
@@ -193,8 +198,9 @@ public partial class MapViewer : Node3D
 			}
 			else
 			{
+				if (invertAlpha) InvertAlpha(image);
 				if (!image.IsCompressed() && !image.HasMipmaps()) image.GenerateMipmaps();
-				if (image.DetectAlpha() != Image.AlphaMode.None) _alphaTextures.Add(path);
+				if (image.DetectAlpha() != Image.AlphaMode.None) _alphaTextures.Add(key);
 				result = ImageTexture.CreateFromImage(image);
 			}
 		}
@@ -202,8 +208,18 @@ public partial class MapViewer : Node3D
 		{
 			GD.PushWarning($"[MapViewer] error cargando {path}: {e.Message}");
 		}
-		_textures[path] = result;
+		_textures[key] = result;
 		return result;
+	}
+
+	/// <summary>Invierte el alfa de todos los niveles de la imagen (descomprime DDS a RGBA8).</summary>
+	private static void InvertAlpha(Image image)
+	{
+		if (image.IsCompressed()) image.Decompress();
+		if (image.GetFormat() != Image.Format.Rgba8) image.Convert(Image.Format.Rgba8);
+		var data = image.GetData();
+		for (var i = 3; i < data.Length; i += 4) data[i] = (byte)(255 - data[i]);
+		image.SetData(image.GetWidth(), image.GetHeight(), image.HasMipmaps(), Image.Format.Rgba8, data);
 	}
 
 	private void PlaceCamera(BspFile bsp, Dictionary<string, string> args)
