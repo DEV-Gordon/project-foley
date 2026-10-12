@@ -61,24 +61,33 @@ public sealed class ClipMap
 
     public CollisionPlane[] Planes { get; }
     public CollisionBrush[] Brushes { get; }
+    /// <summary>Piezas de terreno (malla de triángulos). Las curvas aún no están portadas.</summary>
+    public TerrainCollide[] Terrains { get; }
 
     private readonly float _gridMinX, _gridMinY;
     private readonly int _gridW, _gridH;
     private readonly int[][] _cells;
+    private readonly int[][] _terrainCells;
     private readonly int[] _stamp;
+    private readonly int[] _terrainStamp;
     private int _checkCount;
+    private int _traceCount; // DAT_014bd720: marca de vértices/aristas de terreno ya probados en este trazado
     private readonly List<int> _candidates = new();
+    private readonly List<int> _terrainCandidates = new();
 
-    public ClipMap(CollisionPlane[] planes, CollisionBrush[] brushes)
+    public ClipMap(CollisionPlane[] planes, CollisionBrush[] brushes, TerrainCollide[]? terrains = null)
     {
         Planes = planes;
         Brushes = brushes;
+        Terrains = terrains ?? Array.Empty<TerrainCollide>();
         _stamp = new int[brushes.Length];
+        _terrainStamp = new int[Terrains.Length];
 
-        if (brushes.Length == 0)
+        if (brushes.Length == 0 && Terrains.Length == 0)
         {
             _gridW = _gridH = 1;
             _cells = new[] { Array.Empty<int>() };
+            _terrainCells = new[] { Array.Empty<int>() };
             return;
         }
 
@@ -88,21 +97,32 @@ public sealed class ClipMap
             minX = MathF.Min(minX, b.Mins.X); minY = MathF.Min(minY, b.Mins.Y);
             maxX = MathF.Max(maxX, b.Maxs.X); maxY = MathF.Max(maxY, b.Maxs.Y);
         }
+        foreach (var t in Terrains)
+        {
+            minX = MathF.Min(minX, t.Mins.X); minY = MathF.Min(minY, t.Mins.Y);
+            maxX = MathF.Max(maxX, t.Maxs.X); maxY = MathF.Max(maxY, t.Maxs.Y);
+        }
         _gridMinX = minX;
         _gridMinY = minY;
         _gridW = System.Math.Max(1, (int)MathF.Ceiling((maxX - minX) / CellSize) + 1);
         _gridH = System.Math.Max(1, (int)MathF.Ceiling((maxY - minY) / CellSize) + 1);
 
+        _cells = BuildCells(brushes.Length, i => (brushes[i].Mins, brushes[i].Maxs));
+        _terrainCells = BuildCells(Terrains.Length, i => (Terrains[i].Mins, Terrains[i].Maxs));
+    }
+
+    private int[][] BuildCells(int count, Func<int, (Vec3 min, Vec3 max)> bounds)
+    {
         var lists = new List<int>[_gridW * _gridH];
-        for (var i = 0; i < brushes.Length; i++)
+        for (var i = 0; i < count; i++)
         {
-            var b = brushes[i];
-            CellRange(b.Mins.X, b.Mins.Y, b.Maxs.X, b.Maxs.Y, out var x0, out var y0, out var x1, out var y1);
+            var (min, max) = bounds(i);
+            CellRange(min.X, min.Y, max.X, max.Y, out var x0, out var y0, out var x1, out var y1);
             for (var y = y0; y <= y1; y++)
                 for (var x = x0; x <= x1; x++)
                     (lists[y * _gridW + x] ??= new List<int>()).Add(i);
         }
-        _cells = lists.Select(l => l?.ToArray() ?? Array.Empty<int>()).ToArray();
+        return lists.Select(l => l?.ToArray() ?? Array.Empty<int>()).ToArray();
     }
 
     /// <summary>Construye la colisión del modelo 0 (mundo) de un BSP. Ver docs/formats/bsp.md.</summary>
@@ -135,7 +155,24 @@ public sealed class ClipMap
             var contents = (int)bsp.Materials[b.MaterialIndex].ContentFlags;
             brushes[i] = new CollisionBrush(first, b.SideCount, contents, min, max);
         }
-        return new ClipMap(planes.ToArray(), brushes);
+
+        // Piezas de terreno (CMod_LoadLeafpatchesAndTerrain @0x411fd0). Curvas: TODO(fidelidad), sin portar.
+        var terrains = new List<TerrainCollide>();
+        foreach (var p in bsp.CollisionPatches)
+        {
+            if (p.Type != BspCollisionPatch.TypeTerrain) continue;
+            var verts = new Vec3[p.Dim0];
+            for (var k = 0; k < verts.Length; k++)
+            {
+                var o = (int)(p.Field8 + k) * 3;
+                verts[k] = new Vec3(bsp.CollisionVerts[o], bsp.CollisionVerts[o + 1], bsp.CollisionVerts[o + 2]);
+            }
+            var idx = new int[p.Dim1];
+            for (var k = 0; k < idx.Length; k++) idx[k] = bsp.CollisionIndices[p.Field12 + k];
+            var mat = bsp.Materials[p.MaterialIndex];
+            terrains.Add(new TerrainCollide(verts, idx, (int)mat.ContentFlags, (int)mat.SurfaceFlags));
+        }
+        return new ClipMap(planes.ToArray(), brushes, terrains.ToArray());
     }
 
     private static int SideFlags(BspFile bsp, int sideIndex)
@@ -208,6 +245,9 @@ public sealed class ClipMap
             }
         }
 
+        if (Terrains.Length > 0 && tw.Fraction > 0 && !tw.AllSolid && !IsPointTrace(tw))
+            TraceTerrains(ref tw);
+
         // endpos a partir del start/end originales, sin ajustar.
         Vec3 endPos;
         if (tw.Fraction == 1f) endPos = end;
@@ -218,6 +258,75 @@ public sealed class ClipMap
                 start.Z + tw.Fraction * (end.Z - start.Z));
 
         return new TraceResult(tw.Fraction, endPos, tw.Plane, tw.StartSolid, tw.AllSolid, tw.Contents);
+    }
+
+    // Los trazados de punto contra terreno usan otra rutina (@0x419580), sin portar: TODO(fidelidad).
+    private static bool IsPointTrace(TraceWork tw) =>
+        tw.Size0 == Vec3.Zero && tw.Size1 == Vec3.Zero;
+
+    /// <summary>
+    /// Terreno: cápsula de radio size[1].x y media altura size[1].z (CM_Trace @0x41e960, @0x41a2d0),
+    /// solo piezas cuyos límites tocan los del barrido (@0x41b690) y cuyo contenido entra en la máscara;
+    /// al bajar la fracción toma el contenido y las banderas de superficie de la pieza (@0x41b860).
+    /// </summary>
+    private void TraceTerrains(ref TraceWork tw)
+    {
+        GatherTerrainCandidates(tw.BoundsMin, tw.BoundsMax);
+        if (_terrainCandidates.Count == 0) return;
+        _traceCount++;
+        var delta = new Vec3(
+            (float)((double)tw.End.X - tw.Start.X), (float)((double)tw.End.Y - tw.Start.Y), (float)((double)tw.End.Z - tw.Start.Z));
+        var sweep = new TerrainCollide.SweepState
+        {
+            Start = tw.Start,
+            End = tw.End,
+            Delta = delta,
+            DeltaLenSq = (float)((double)delta.X * delta.X + (double)delta.Y * delta.Y + (double)delta.Z * delta.Z),
+            Radius = tw.Size1.X,
+            HalfHeight = tw.Size1.Z,
+            Fraction = tw.Fraction,
+            CheckCount = _traceCount,
+        };
+        foreach (var i in _terrainCandidates)
+        {
+            var t = Terrains[i];
+            if ((t.Contents & tw.Mask) == 0) continue;
+            if (tw.BoundsMin.X > t.Maxs.X || tw.BoundsMax.X < t.Mins.X ||
+                tw.BoundsMin.Y > t.Maxs.Y || tw.BoundsMax.Y < t.Mins.Y ||
+                tw.BoundsMin.Z > t.Maxs.Z || tw.BoundsMax.Z < t.Mins.Z) continue;
+            var before = sweep.Fraction;
+            sweep.StartSolid = false;
+            t.Trace(ref sweep);
+            if (sweep.StartSolid) tw.StartSolid = true;
+            if (sweep.Fraction < before)
+            {
+                tw.Fraction = sweep.Fraction;
+                tw.Plane = new CollisionPlane(sweep.Normal, 0, 0, t.SurfaceFlags);
+                tw.Contents = t.Contents;
+            }
+            if (sweep.Fraction == 0) break;
+        }
+    }
+
+    private void GatherTerrainCandidates(Vec3 min, Vec3 max)
+    {
+        _terrainCandidates.Clear();
+        if (++_checkCount == int.MaxValue)
+        {
+            Array.Clear(_stamp);
+            Array.Clear(_terrainStamp);
+            _checkCount = 1;
+        }
+        CellRange(min.X, min.Y, max.X, max.Y, out var x0, out var y0, out var x1, out var y1);
+        for (var y = y0; y <= y1; y++)
+            for (var x = x0; x <= x1; x++)
+                foreach (var t in _terrainCells[y * _gridW + x])
+                {
+                    if (_terrainStamp[t] == _checkCount) continue;
+                    _terrainStamp[t] = _checkCount;
+                    _terrainCandidates.Add(t);
+                }
+        _terrainCandidates.Sort();
     }
 
     private struct TraceWork

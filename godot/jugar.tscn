@@ -1,14 +1,46 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://bpoja2qrmsawp"]
 
-[ext_resource type="Script" path="res://bridge/MapViewer.cs" id="1_viewer"]
-[ext_resource type="Script" path="res://bridge/PlayerController.cs" id="2_player"]
+[ext_resource type="Script" uid="uid://cpkauh3q4nyed" path="res://bridge/MapViewer.cs" id="1_viewer"]
+[ext_resource type="Script" uid="uid://btcuw3eiyvxq" path="res://bridge/PlayerController.cs" id="2_player"]
 
-[node name="MapViewer" type="Node3D"]
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_3uayw"]
+sky_top_color = Color(0.015, 0.025, 0.07, 1)
+sky_horizon_color = Color(0.06, 0.08, 0.16, 1)
+sky_curve = 0.2
+sky_energy_multiplier = 0.6
+ground_bottom_color = Color(0.01, 0.012, 0.025, 1)
+ground_horizon_color = Color(0.06, 0.08, 0.16, 1)
+
+[sub_resource type="Sky" id="Sky_4iyw2"]
+sky_material = SubResource("ProceduralSkyMaterial_3uayw")
+
+[sub_resource type="Environment" id="Environment_avws3"]
+background_mode = 2
+sky = SubResource("Sky_4iyw2")
+ambient_light_source = 3
+tonemap_exposure = 1.5
+ssr_enabled = true
+ssao_enabled = true
+sdfgi_enabled = true
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.003
+volumetric_fog_albedo = Color(0.35, 0.4, 0.55, 1)
+
+[node name="MapViewer" type="Node3D" unique_id=1885298738]
 script = ExtResource("1_viewer")
 
-[node name="Camera3D" type="Camera3D" parent="."]
-near = 0.05
+[node name="Camera3D" type="Camera3D" parent="." unique_id=998868721]
 far = 3000.0
 
-[node name="PlayerController" type="Node" parent="."]
+[node name="PlayerController" type="Node" parent="." unique_id=852813139]
 script = ExtResource("2_player")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=290653231]
+environment = SubResource("Environment_avws3")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1144585684]
+transform = Transform3D(0.7660444, -0.3686878, 0.5265408, 0, 0.819152, 0.5735764, -0.6427876, -0.439385, 0.6275069, 0, 0, 0)
+light_color = Color(0.6, 0.72, 1, 1)
+light_energy = 0.35
+light_angular_distance = 1.5
+shadow_enabled = true

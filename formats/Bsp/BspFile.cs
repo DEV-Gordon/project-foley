@@ -50,6 +50,23 @@ public readonly record struct BspModel(
     uint FirstSurface, uint SurfaceCount,
     uint FirstBrush, uint BrushCount);
 
+/// <summary>
+/// Pieza de colisión no-brush del lump 24 (16 bytes): terreno (malla de triángulos) o curva
+/// (rejilla de puntos de control). Los índices de vértices y de índices son del lump 25 y 26.
+/// Ver docs/formats/bsp.md y docs/re/colision.md.
+/// </summary>
+public readonly record struct BspCollisionPatch(
+    ushort MaterialIndex,
+    byte Type,          // 0 = curva, 1 = terreno
+    ushort Dim0,        // terreno: nº de vértices; curva: ancho de la rejilla
+    ushort Dim1,        // terreno: nº de índices; curva: alto de la rejilla
+    uint Field8,        // terreno: primer vértice; curva: sin identificar
+    uint Field12)       // terreno: primer índice; curva: primer vértice
+{
+    public const byte TypeCurve = 0;
+    public const byte TypeTerrain = 1;
+}
+
 /// <summary>Entidad del lump 29: pares clave/valor.</summary>
 public sealed class BspEntity
 {
@@ -79,6 +96,9 @@ public sealed class BspFile
     public const int LumpSurfaces = 6;
     public const int LumpVertices = 7;
     public const int LumpIndices = 8;
+    public const int LumpCollisionPatches = 24;
+    public const int LumpCollisionVerts = 25;
+    public const int LumpCollisionIndices = 26;
     public const int LumpModels = 27;
     public const int LumpEntities = 29;
 
@@ -99,11 +119,18 @@ public sealed class BspFile
     public BspBrush[] Brushes { get; }
     public BspBrushSide[] BrushSides { get; }
     public BspModel[] Models { get; }
+    public BspCollisionPatch[] CollisionPatches { get; }
+    public float[] CollisionVerts { get; }          // x, y, z consecutivos (lump 25)
+    public ushort[] CollisionIndices { get; }       // lump 26
 
     private BspFile(BspMaterial[] materials, BspSurface[] surfaces, BspVertex[] vertices,
         ushort[] indices, IReadOnlyList<BspEntity> entities,
-        BspPlane[] planes, BspBrush[] brushes, BspBrushSide[] brushSides, BspModel[] models)
+        BspPlane[] planes, BspBrush[] brushes, BspBrushSide[] brushSides, BspModel[] models,
+        BspCollisionPatch[] patches, float[] collisionVerts, ushort[] collisionIndices)
     {
+        CollisionPatches = patches;
+        CollisionVerts = collisionVerts;
+        CollisionIndices = collisionIndices;
         Materials = materials;
         Surfaces = surfaces;
         Vertices = vertices;
@@ -137,7 +164,11 @@ public sealed class BspFile
         var sides = ReadBrushSides(Lump(data, LumpBrushSides, BrushSideSize));
         var brushes = ReadBrushes(Lump(data, LumpBrushes, BrushSize), materials.Length, sides, planes.Length);
         var models = ReadModels(Lump(data, LumpModels, ModelSize), surfaces.Length, brushes.Length);
-        return new BspFile(materials, surfaces, vertices, indices, entities, planes, brushes, sides, models);
+        var cverts = ReadFloats(Lump(data, LumpCollisionVerts, 12));
+        var cindices = ReadIndices(Lump(data, LumpCollisionIndices, 2));
+        var patches = ReadCollisionPatches(Lump(data, LumpCollisionPatches, 16), materials.Length, cverts.Length / 3, cindices.Length);
+        return new BspFile(materials, surfaces, vertices, indices, entities, planes, brushes, sides, models,
+            patches, cverts, cindices);
     }
 
     private static ReadOnlySpan<byte> Lump(ReadOnlySpan<byte> data, int index, int recordSize)
@@ -249,6 +280,39 @@ public sealed class BspFile
             if ((long)m.FirstSurface + m.SurfaceCount > surfaceCount)
                 throw new InvalidDataException($"Modelo {i}: superficies fuera de rango.");
             result[i] = m;
+        }
+        return result;
+    }
+
+    private static float[] ReadFloats(ReadOnlySpan<byte> lump)
+    {
+        var result = new float[lump.Length / 4];
+        for (var i = 0; i < result.Length; i++) result[i] = F(lump, i * 4);
+        return result;
+    }
+
+    private static BspCollisionPatch[] ReadCollisionPatches(ReadOnlySpan<byte> lump, int materialCount, int vertCount, int indexCount)
+    {
+        var result = new BspCollisionPatch[lump.Length / 16];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var r = lump.Slice(i * 16, 16);
+            var p = new BspCollisionPatch(
+                BinaryPrimitives.ReadUInt16LittleEndian(r), r[2],
+                BinaryPrimitives.ReadUInt16LittleEndian(r[4..]), BinaryPrimitives.ReadUInt16LittleEndian(r[6..]),
+                U(r, 8), U(r, 12));
+            if (p.MaterialIndex >= materialCount)
+                throw new InvalidDataException($"Pieza de colisión {i}: material {p.MaterialIndex} fuera de rango.");
+            if (p.Type == BspCollisionPatch.TypeTerrain)
+            {
+                if ((long)p.Field8 + p.Dim0 > vertCount || (long)p.Field12 + p.Dim1 > indexCount || p.Dim1 % 3 != 0)
+                    throw new InvalidDataException($"Pieza de terreno {i}: rangos inválidos.");
+            }
+            else if ((long)p.Field12 + p.Dim0 * p.Dim1 > vertCount)
+            {
+                throw new InvalidDataException($"Curva {i}: vértices fuera de rango.");
+            }
+            result[i] = p;
         }
         return result;
     }

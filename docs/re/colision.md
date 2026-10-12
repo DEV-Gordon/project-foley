@@ -51,3 +51,37 @@ modelo de jugador es una caja (confirmar con REA).
 
 - Confirmar con REA: máscara del jugador, epsilon y si CoD1 conserva `CM_TraceThroughBrush`.
 - Modelos inline y entidades sólidas (`CONTENTS_BODY`).
+
+## Terreno y curvas (CoD1, confirmado con REA sobre CoDSP.exe 1.5)
+
+Además de los brushes, el BSP trae **piezas de colisión** (lumps 24–26, `docs/formats/bsp.md`)
+de dos tipos. En burnville son 1112 de terreno y 512 curvas; sin ellas el 69 % del suelo
+visible no tenía colisión (el jugador lo atravesaba).
+
+**Carga** (`CMod_LoadLeafpatchesAndTerrain`, `0x411fd0`): tipo 1 → terreno
+(`CM_GenerateTerrainCollide`, `0x418860`); tipo 0 → curva (`CM_GeneratePatchFacets`, como
+el `cm_patch.c` de Quake 3; **sin portar**). Contenido y banderas de superficie salen del
+material de la pieza.
+
+**Terreno** (`TerrainCollide.cs`):
+- Por triángulo: plano `(v2 − v0) × (v1 − v0)` normalizado; base dual para coordenadas
+  baricéntricas (`k = 1/(1 − d²)`, dividido por la longitud de cada arista); punteros a sus
+  vértices y aristas "colisionables".
+- Aristas: todas las de la malla; una arista compartida solo se descarta si
+  `n·(Q − P1) > 0` y `|n|² < max(|Q−a|², |Q−b|²) · 6.4e-9` (en la práctica, solo degeneradas).
+  Vértices: los que pertenecen a alguna arista conservada.
+- Si todas las normales miran abajo (z < −0.001 y ninguna > 0.001) la pieza "mira abajo".
+
+**Trazado** (`0x41a350` → `0x41a2d0` → `0x4196f0`): con una caja, el motor avisa
+"Box collision on terrain currently being faked with capsule collision" y usa una **cápsula**:
+radio `size[1].x` (15), media altura `size[1].z` (35), como el `sphere` de Quake 3. Solo se
+barre **una esfera** de la cápsula (la inferior; la superior si la pieza mira abajo), con radio
+`+0.125`, contra caras (dentro del triángulo), aristas (cilindro) y vértices (esfera). Al tocar,
+la fracción queda `1e-5` antes; si empieza dentro, fracción 0 y `startsolid` (no `allsolid`).
+Cada vértice/arista se prueba una vez por trazado. Antes se filtran las piezas cuyos límites
+no solapan los del barrido (`0x41b690`, sin margen).
+
+Consecuencias observadas en el port: el jugador se apoya a 0.125 del suelo, igual que en
+brushes; un trazado de posición (delta nulo) **no** detecta el terreno, como en el original.
+
+Pendiente: curvas (tipo 0) y trazados de punto contra terreno (`0x419580`).

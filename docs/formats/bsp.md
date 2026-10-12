@@ -28,6 +28,9 @@ Lumps de colisión (hito 3):
 | 2 | Planos | 16 B | confirmado |
 | 3 | Lados de brush | 8 B | confirmado |
 | 4 | Brushes | 4 B | confirmado |
+| 24 | Piezas de colisión (terreno/curva) | 16 B | confirmado (REA: CMod_LoadLeafpatchesAndTerrain) |
+| 25 | Vértices de colisión | `float[3]` | confirmado |
+| 26 | Índices de colisión | `uint16` | confirmado |
 | 27 | Modelos (mundo + inline `*N`) | 48 B | confirmado (campos de brushes); resto probable |
 
 El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 9-11, 16-26, 28, 30-32) está
@@ -124,6 +127,20 @@ Todo brush tiene al menos 6 lados.
   `float`**, en el orden `minX, maxX, minY, maxY, minZ, maxZ` (en los 5381 brushes min ≤ max).
 - Del 7.º lado en adelante el campo 0 es un **índice de plano** del lump 2 (los 20 171 de
   burnville están en rango).
+
+### Lump 24, pieza de colisión (16 B)
+
+| Offset | Tipo | Terreno (tipo 1) | Curva (tipo 0) |
+|---:|---|---|---|
+| 0 | `uint16` | material | material |
+| 2 | `uint8` | tipo = 1 | tipo = 0 |
+| 4 | `uint16` | nº de vértices | ancho de la rejilla |
+| 6 | `uint16` | nº de índices | alto de la rejilla |
+| 8 | `uint32` | primer vértice (lump 25) | sin identificar (pasa a CM_GeneratePatchFacets) |
+| 12 | `uint32` | primer índice (lump 26) | primer vértice (lump 25) |
+
+Los índices del terreno son relativos a su primer vértice, de 3 en 3. Burnville: 1112 de
+terreno y 512 curvas. Validado en los 49 BSP (rangos dentro de los lumps 25 y 26).
 
 ### Lump 27, modelo (48 B)
 
