@@ -4,6 +4,12 @@
 [ext_resource type="Script" uid="uid://clrlmbgt1nvb0" path="res://render/fly_camera.gd" id="2_tdmwm"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_vkf0b"]
+sky_top_color = Color(0.015, 0.025, 0.07, 1)
+sky_horizon_color = Color(0.06, 0.08, 0.16, 1)
+sky_curve = 0.2
+sky_energy_multiplier = 0.6
+ground_bottom_color = Color(0.01, 0.012, 0.025, 1)
+ground_horizon_color = Color(0.06, 0.08, 0.16, 1)
 
 [sub_resource type="Sky" id="Sky_4iyw2"]
 sky_material = SubResource("ProceduralSkyMaterial_vkf0b")
@@ -17,7 +23,8 @@ ssr_enabled = true
 ssao_enabled = true
 sdfgi_enabled = true
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.001
+volumetric_fog_density = 0.003
+volumetric_fog_albedo = Color(0.35, 0.4, 0.55, 1)
 
 [node name="MapViewer" type="Node3D" unique_id=120502499]
 script = ExtResource("1_q4acx")
@@ -29,5 +36,8 @@ script = ExtResource("2_tdmwm")
 environment = SubResource("Environment_mrc1l")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=458449217]
-transform = Transform3D(0.8660254, 0.35355338, -0.35355338, 0, 0.70710677, 0.70710677, 0.5, -0.6123724, 0.6123724, 0, 0, 0)
+transform = Transform3D(0.7660444, -0.3686878, 0.5265408, 0, 0.819152, 0.5735764, -0.6427876, -0.439385, 0.6275069, 0, 0, 0)
+light_color = Color(0.6, 0.72, 1, 1)
+light_energy = 0.35
+light_angular_distance = 1.5
 shadow_enabled = true
