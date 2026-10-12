@@ -232,17 +232,38 @@ public partial class MapViewer : Node3D
 	private void AddLighting()
 	{
 		// Solo para poder inspeccionar el mapa; la iluminación real es del hito 8.
-		_environment = new Godot.Environment
+		// Si la escena ya trae su entorno o su sol (p. ej. luztest.tscn) se respetan y no se añade otro.
+		WorldEnvironment? sceneEnvironment = null;
+		var sceneHasSun = false;
+		foreach (var child in GetChildren())
 		{
-			AmbientLightSource = Godot.Environment.AmbientSource.Color,
-			AmbientLightColor = new Color(0.8f, 0.82f, 0.9f),
-			AmbientLightEnergy = 1.0f,
-			BackgroundMode = Godot.Environment.BGMode.Color,
-			BackgroundColor = new Color(0.05f, 0.06f, 0.1f),
-		};
-		AddChild(new WorldEnvironment { Environment = _environment });
-		AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-50, 30, 0), LightEnergy = 0.6f });
+			if (child is WorldEnvironment we) sceneEnvironment ??= we;
+			else if (child is DirectionalLight3D) sceneHasSun = true;
+		}
+
+		if (sceneEnvironment is not null)
+		{
+			sceneEnvironment.Environment ??= CreateInspectionEnvironment();
+			_environment = sceneEnvironment.Environment;
+		}
+		else
+		{
+			_environment = CreateInspectionEnvironment();
+			AddChild(new WorldEnvironment { Environment = _environment });
+		}
+
+		if (!sceneHasSun)
+			AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-50, 30, 0), LightEnergy = 0.6f });
 	}
+
+	private static Godot.Environment CreateInspectionEnvironment() => new()
+	{
+		AmbientLightSource = Godot.Environment.AmbientSource.Color,
+		AmbientLightColor = new Color(0.8f, 0.82f, 0.9f),
+		AmbientLightEnergy = 1.0f,
+		BackgroundMode = Godot.Environment.BGMode.Color,
+		BackgroundColor = new Color(0.05f, 0.06f, 0.1f),
+	};
 
 	private void AddHud()
 	{

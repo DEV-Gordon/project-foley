@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://clsm6gh6e3efb"]
+
+[ext_resource type="Script" uid="uid://cpkauh3q4nyed" path="res://bridge/MapViewer.cs" id="1_q4acx"]
+[ext_resource type="Script" uid="uid://clrlmbgt1nvb0" path="res://render/fly_camera.gd" id="2_tdmwm"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_vkf0b"]
+
+[sub_resource type="Sky" id="Sky_4iyw2"]
+sky_material = SubResource("ProceduralSkyMaterial_vkf0b")
+
+[sub_resource type="Environment" id="Environment_mrc1l"]
+background_mode = 2
+sky = SubResource("Sky_4iyw2")
+ambient_light_source = 3
+tonemap_exposure = 1.5
+ssr_enabled = true
+ssao_enabled = true
+sdfgi_enabled = true
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.001
+
+[node name="MapViewer" type="Node3D" unique_id=120502499]
+script = ExtResource("1_q4acx")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1706622669]
+script = ExtResource("2_tdmwm")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1058898430]
+environment = SubResource("Environment_mrc1l")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=458449217]
+transform = Transform3D(0.8660254, 0.35355338, -0.35355338, 0, 0.70710677, 0.70710677, 0.5, -0.6123724, 0.6123724, 0, 0, 0)
+shadow_enabled = true
