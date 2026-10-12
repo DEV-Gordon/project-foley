@@ -92,4 +92,25 @@ public class BspCorpusTests
         }
         Assert.True(unresolved.Count == 0, "Sin resolver: " + string.Join(", ", unresolved));
     }
+
+    [CorpusFact]
+    public void BurnvilleColisionCuadra()
+    {
+        using var pk3 = Open();
+        var bsp = BspFile.Read(pk3.ReadAllBytes(Map));
+
+        // Valores observados al deducir el formato (docs/formats/bsp.md).
+        Assert.Equal(17914, bsp.Planes.Length);
+        Assert.Equal(5381, bsp.Brushes.Length);
+        Assert.Equal(52457, bsp.BrushSides.Length);
+        Assert.Equal(428, bsp.Models.Length);
+        Assert.Equal(0u, bsp.Models[0].FirstBrush);
+        Assert.Equal(4946u, bsp.Models[0].BrushCount);
+
+        // Normales unitarias y cajas axiales ordenadas (min <= max).
+        Assert.All(bsp.Planes, p => Assert.InRange(MathF.Sqrt(p.Nx * p.Nx + p.Ny * p.Ny + p.Nz * p.Nz), 0.999f, 1.001f));
+        foreach (var b in bsp.Brushes)
+            for (var axis = 0; axis < 3; axis++)
+                Assert.True(bsp.BrushSides[b.FirstSide + axis * 2].AxialDistance <= bsp.BrushSides[b.FirstSide + axis * 2 + 1].AxialDistance);
+    }
 }

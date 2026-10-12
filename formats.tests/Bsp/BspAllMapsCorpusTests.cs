@@ -111,6 +111,21 @@ public class BspAllMapsCorpusTests
 
         if (!bsp.Entities.Any(e => e.ClassName == "worldspawn")) problems.Add("sin worldspawn");
 
+        // Colisión: los modelos reparten todos los brushes sin solaparse, empezando por el mundo.
+        if (bsp.Models.Length == 0) problems.Add("sin modelos");
+        else
+        {
+            long next = 0;
+            foreach (var m in bsp.Models)
+            {
+                if (m.FirstBrush != next) { problems.Add("brushes de modelos no consecutivos"); break; }
+                next += m.BrushCount;
+            }
+            if (next != bsp.Brushes.Length) problems.Add($"modelos cubren {next} de {bsp.Brushes.Length} brushes");
+            var inline = bsp.Entities.Select(e => e.Get("model")).Where(v => v is not null && v.StartsWith('*')).Distinct().Count();
+            if (inline != bsp.Models.Length - 1) problems.Add($"{inline} modelos inline en entidades vs {bsp.Models.Length - 1} en el lump");
+        }
+
         var unresolved = bsp.Surfaces.Select(s => (int)s.MaterialIndex).Distinct()
             .Select(i => resolver.Resolve(bsp.Materials[i].Name))
             .Where(r => r.TexturePath is null && !r.IsSky && !r.NoDraw && !MissingInGameData.Contains(r.Name))

@@ -21,8 +21,18 @@ directa de ioquake3 para v59 (ioquake3 cubre v46). Confianza por sección entre 
 | 8 | Índices | `uint16` | confirmado |
 | 29 | Entidades | texto | confirmado |
 
-El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 2-3 light grid, 4, 9-11, 16-28,
-30-32) está sin identificar o sin necesidad todavía. Colisión (planos, brushes) es del hito 3.
+Lumps de colisión (hito 3):
+
+| Lump | Contenido | Registro | Confianza |
+|---:|---|---|---|
+| 2 | Planos | 16 B | confirmado |
+| 3 | Lados de brush | 8 B | confirmado |
+| 4 | Brushes | 4 B | confirmado |
+| 27 | Modelos (mundo + inline `*N`) | 48 B | confirmado (campos de brushes); resto probable |
+
+El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 9-11, 16-26, 28, 30-32) está
+sin identificar o sin necesidad todavía. El árbol BSP (nodos, hojas) no se usa: el trazado
+recorre los brushes con una estructura de aceleración propia (ver "Colisión").
 
 ### Lump 0, material (72 B)
 
@@ -33,6 +43,21 @@ El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 2-3 light grid, 
 | 68 | `uint32` | flags de contenido (significado sin confirmar) |
 
 El nombre es la ruta de textura sin extensión (`textures/...`) o el nombre de un shader.
+
+Flags de contenido (offset 68). Los nombres de bit son **probables**: se dedujeron de qué
+materiales los llevan en burnville y coinciden con la nomenclatura de juegos posteriores del
+mismo motor. Falta confirmarlos con REA.
+
+| Bit | Nombre probable | Evidencia en burnville |
+|---|---|---|
+| `0x00000001` | sólido | texturas normales, `common/caulk`, cielo |
+| `0x00000002` | follaje | `common/clipfoliage` |
+| `0x00000800` | cielo | `sky/burnville` (`0x801`) |
+| `0x00001000` | no bloquea la vista de la IA | `nosight_noclip`, `clip_nosight*` |
+| `0x00010000` | clip de jugador | `common/clipplayer` (`0x28010000`), `clip`, `clipfull` |
+| `0x00020000` | clip de IA | `common/clipmonster` (`0x28020000`), `clip`, `clipfull` |
+| `0x08000000` | detalle | la mayoría de texturas de detalle |
+| `0x20000000` | translúcido | todos los `common/clip*` |
 
 ### Lump 6, superficie (16 B)
 
@@ -72,6 +97,50 @@ triángulo. En burnville ningún índice alcanza la cantidad de vértices de su 
 Los 58 867 triángulos de burnville cumplen `cross(v1-v0, v2-v0) · normal < 0`: el giro de
 la cara frontal es **horario** visto desde delante en un sistema diestro Z arriba. Hay que
 invertirlo al pasarlo a motores con cara frontal antihoraria (Godot).
+
+### Lump 2, plano (16 B)
+
+`float[3]` normal (unitaria en los 17 914 planos de burnville) + `float` distancia.
+
+### Lump 4, brush (4 B)
+
+| Offset | Tipo | Campo |
+|---:|---|---|
+| 0 | `uint16` | cantidad de lados |
+| 2 | `uint16` | índice de material (lump 0); sus flags de contenido son los del brush |
+
+Los lados de cada brush van **consecutivos** en el lump 3, en el mismo orden que los brushes
+(burnville: la suma de lados de los 5381 brushes es 52 457 = tamaño del lump 3 / 8).
+Todo brush tiene al menos 6 lados.
+
+### Lump 3, lado de brush (8 B)
+
+| Offset | Tipo | Campo |
+|---:|---|---|
+| 0 | `float` **o** `uint32` | ver abajo |
+| 4 | `uint32` | índice de material del lado |
+
+- Los **6 primeros lados** de cada brush son la caja axial y el campo 0 es una **distancia
+  `float`**, en el orden `minX, maxX, minY, maxY, minZ, maxZ` (en los 5381 brushes min ≤ max).
+- Del 7.º lado en adelante el campo 0 es un **índice de plano** del lump 2 (los 20 171 de
+  burnville están en rango).
+
+### Lump 27, modelo (48 B)
+
+| Offset | Tipo | Campo |
+|---:|---|---|
+| 0 | `float[3]` | mínimos |
+| 12 | `float[3]` | máximos |
+| 24 | `uint32` | primera superficie (lump 6) — probable |
+| 28 | `uint32` | cantidad de superficies — probable |
+| 32 | `uint32` | primer elemento de un lump sin identificar |
+| 36 | `uint32` | cantidad de ese elemento |
+| 40 | `uint32` | primer brush (lump 4) |
+| 44 | `uint32` | cantidad de brushes |
+
+El modelo 0 es el mundo (burnville: brushes 0..4945). Los siguientes son los modelos inline
+`*N` de las entidades (`script_brushmodel`, triggers): 427 en burnville, uno por cada valor
+distinto de `"model" "*N"`. La suma de brushes de todos los modelos es exactamente el total.
 
 ### Lump 29, entidades
 

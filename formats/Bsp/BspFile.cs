@@ -26,6 +26,30 @@ public readonly record struct BspVertex(
     float Nx, float Ny, float Nz,
     byte R, byte G, byte B, byte A);
 
+/// <summary>Plano del lump 2 (16 bytes).</summary>
+public readonly record struct BspPlane(float Nx, float Ny, float Nz, float Dist);
+
+/// <summary>Brush del lump 4 (4 bytes). Sus lados empiezan en <see cref="FirstSide"/> (calculado al leer).</summary>
+public readonly record struct BspBrush(ushort SideCount, ushort MaterialIndex, int FirstSide);
+
+/// <summary>
+/// Lado de brush del lump 3 (8 bytes). En los 6 primeros lados de cada brush el primer campo
+/// es una distancia axial (minX, maxX, minY, maxY, minZ, maxZ); en el resto, un índice de plano.
+/// </summary>
+public readonly record struct BspBrushSide(uint Raw, uint MaterialIndex)
+{
+    public const int AxialCount = 6;
+    public float AxialDistance => BitConverter.UInt32BitsToSingle(Raw);
+    public uint PlaneIndex => Raw;
+}
+
+/// <summary>Modelo del lump 27 (48 bytes). El 0 es el mundo; los demás, los modelos inline <c>*N</c>.</summary>
+public readonly record struct BspModel(
+    float MinX, float MinY, float MinZ,
+    float MaxX, float MaxY, float MaxZ,
+    uint FirstSurface, uint SurfaceCount,
+    uint FirstBrush, uint BrushCount);
+
 /// <summary>Entidad del lump 29: pares clave/valor.</summary>
 public sealed class BspEntity
 {
@@ -49,29 +73,46 @@ public sealed class BspFile
     public const int LumpCount = 33;
 
     public const int LumpMaterials = 0;
+    public const int LumpPlanes = 2;
+    public const int LumpBrushSides = 3;
+    public const int LumpBrushes = 4;
     public const int LumpSurfaces = 6;
     public const int LumpVertices = 7;
     public const int LumpIndices = 8;
+    public const int LumpModels = 27;
     public const int LumpEntities = 29;
 
     private const int MaterialSize = 72;
     private const int SurfaceSize = 16;
     private const int VertexSize = 44;
+    private const int PlaneSize = 16;
+    private const int BrushSideSize = 8;
+    private const int BrushSize = 4;
+    private const int ModelSize = 48;
 
     public BspMaterial[] Materials { get; }
     public BspSurface[] Surfaces { get; }
     public BspVertex[] Vertices { get; }
     public ushort[] Indices { get; }
     public IReadOnlyList<BspEntity> Entities { get; }
+    public BspPlane[] Planes { get; }
+    public BspBrush[] Brushes { get; }
+    public BspBrushSide[] BrushSides { get; }
+    public BspModel[] Models { get; }
 
     private BspFile(BspMaterial[] materials, BspSurface[] surfaces, BspVertex[] vertices,
-        ushort[] indices, IReadOnlyList<BspEntity> entities)
+        ushort[] indices, IReadOnlyList<BspEntity> entities,
+        BspPlane[] planes, BspBrush[] brushes, BspBrushSide[] brushSides, BspModel[] models)
     {
         Materials = materials;
         Surfaces = surfaces;
         Vertices = vertices;
         Indices = indices;
         Entities = entities;
+        Planes = planes;
+        Brushes = brushes;
+        BrushSides = brushSides;
+        Models = models;
     }
 
     public static BspFile Read(byte[] data) => Read(data.AsSpan());
@@ -92,7 +133,11 @@ public sealed class BspFile
         var surfaces = ReadSurfaces(Lump(data, LumpSurfaces, SurfaceSize),
             materials.Length, vertices.Length, indices.Length);
         var entities = ParseEntities(Lump(data, LumpEntities, 1));
-        return new BspFile(materials, surfaces, vertices, indices, entities);
+        var planes = ReadPlanes(Lump(data, LumpPlanes, PlaneSize));
+        var sides = ReadBrushSides(Lump(data, LumpBrushSides, BrushSideSize));
+        var brushes = ReadBrushes(Lump(data, LumpBrushes, BrushSize), materials.Length, sides, planes.Length);
+        var models = ReadModels(Lump(data, LumpModels, ModelSize), surfaces.Length, brushes.Length);
+        return new BspFile(materials, surfaces, vertices, indices, entities, planes, brushes, sides, models);
     }
 
     private static ReadOnlySpan<byte> Lump(ReadOnlySpan<byte> data, int index, int recordSize)
@@ -138,6 +183,75 @@ public sealed class BspFile
 
     private static float F(ReadOnlySpan<byte> r, int offset) =>
         BinaryPrimitives.ReadSingleLittleEndian(r[offset..]);
+
+    private static uint U(ReadOnlySpan<byte> r, int offset) =>
+        BinaryPrimitives.ReadUInt32LittleEndian(r[offset..]);
+
+    private static BspPlane[] ReadPlanes(ReadOnlySpan<byte> lump)
+    {
+        var result = new BspPlane[lump.Length / PlaneSize];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var r = lump.Slice(i * PlaneSize, PlaneSize);
+            result[i] = new BspPlane(F(r, 0), F(r, 4), F(r, 8), F(r, 12));
+        }
+        return result;
+    }
+
+    private static BspBrushSide[] ReadBrushSides(ReadOnlySpan<byte> lump)
+    {
+        var result = new BspBrushSide[lump.Length / BrushSideSize];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var r = lump.Slice(i * BrushSideSize, BrushSideSize);
+            result[i] = new BspBrushSide(
+                BinaryPrimitives.ReadUInt32LittleEndian(r),
+                BinaryPrimitives.ReadUInt32LittleEndian(r[4..]));
+        }
+        return result;
+    }
+
+    private static BspBrush[] ReadBrushes(ReadOnlySpan<byte> lump, int materialCount, BspBrushSide[] sides, int planeCount)
+    {
+        var result = new BspBrush[lump.Length / BrushSize];
+        var next = 0;
+        for (var i = 0; i < result.Length; i++)
+        {
+            var count = BinaryPrimitives.ReadUInt16LittleEndian(lump[(i * BrushSize)..]);
+            var material = BinaryPrimitives.ReadUInt16LittleEndian(lump[(i * BrushSize + 2)..]);
+            if (count < BspBrushSide.AxialCount)
+                throw new InvalidDataException($"Brush {i}: {count} lados (mínimo {BspBrushSide.AxialCount}).");
+            if (material >= materialCount)
+                throw new InvalidDataException($"Brush {i}: material {material} fuera de rango ({materialCount}).");
+            if (next + count > sides.Length)
+                throw new InvalidDataException($"Brush {i}: lados fuera de rango.");
+            for (var k = BspBrushSide.AxialCount; k < count; k++)
+                if (sides[next + k].PlaneIndex >= planeCount)
+                    throw new InvalidDataException($"Brush {i}, lado {k}: plano {sides[next + k].PlaneIndex} fuera de rango.");
+            result[i] = new BspBrush(count, material, next);
+            next += count;
+        }
+        if (next != sides.Length)
+            throw new InvalidDataException($"Los brushes usan {next} lados pero el lump tiene {sides.Length}.");
+        return result;
+    }
+
+    private static BspModel[] ReadModels(ReadOnlySpan<byte> lump, int surfaceCount, int brushCount)
+    {
+        var result = new BspModel[lump.Length / ModelSize];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var r = lump.Slice(i * ModelSize, ModelSize);
+            var m = new BspModel(F(r, 0), F(r, 4), F(r, 8), F(r, 12), F(r, 16), F(r, 20),
+                U(r, 24), U(r, 28), U(r, 40), U(r, 44));
+            if ((long)m.FirstBrush + m.BrushCount > brushCount)
+                throw new InvalidDataException($"Modelo {i}: brushes fuera de rango.");
+            if ((long)m.FirstSurface + m.SurfaceCount > surfaceCount)
+                throw new InvalidDataException($"Modelo {i}: superficies fuera de rango.");
+            result[i] = m;
+        }
+        return result;
+    }
 
     private static ushort[] ReadIndices(ReadOnlySpan<byte> lump)
     {

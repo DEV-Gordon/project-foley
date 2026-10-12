@@ -21,6 +21,9 @@ public partial class MapViewer : Node3D
 
 	private readonly Dictionary<string, Texture2D?> _textures = new();
 
+	/// <summary>Se emite al terminar de construir el mapa, con el BSP leído (lo usa el controlador del jugador).</summary>
+	public event Action<BspFile>? MapLoaded;
+
 	// Ayudas de inspección (solo presentación). L cambia la vista; B cambia el brillo ambiental.
 	private static readonly float[] AmbientLevels = { 1.0f, 2.0f, 4.0f, 0.3f };
 	private Godot.Environment? _environment;
@@ -62,6 +65,7 @@ public partial class MapViewer : Node3D
 		PlaceCamera(bsp, args);
 		AddLighting();
 		AddHud();
+		MapLoaded?.Invoke(bsp);
 
 		if (args.TryGetValue("shot", out var shotPath)) _ = TakeScreenshotAndQuit(shotPath);
 	}
@@ -137,6 +141,9 @@ public partial class MapViewer : Node3D
 
 	/// <summary>Ejes del original (Z arriba, diestro) a Godot (Y arriba, -Z adelante): rotación propia.</summary>
 	private static Vector3 ToGodot(float x, float y, float z) => new(x, z, -y);
+
+	/// <summary>Posición de la simulación (unidades y ejes originales) a posición de Godot (metros, Y arriba).</summary>
+	public static Vector3 SimToGodot(float x, float y, float z) => ToGodot(x, y, z) * MetersPerUnit;
 
 	private StandardMaterial3D MakeMaterial(Pk3Collection pk3, ResolvedMaterial resolved, ref int untextured)
 	{
