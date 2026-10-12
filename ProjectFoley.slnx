@@ -5,6 +5,11 @@
   <Folder Name="/formats/">
     <Project Path="formats/Foley.Formats.csproj" />
   </Folder>
+  <Folder Name="/godot/">
+    <Project Path="godot/project-foley.csproj">
+      <BuildType Project="Debug" />
+    </Project>
+  </Folder>
   <Folder Name="/sim.tests/">
     <Project Path="sim.tests/Foley.Sim.Tests.csproj" />
   </Folder>
