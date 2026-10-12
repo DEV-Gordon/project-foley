@@ -13,7 +13,7 @@ Si un cambio de presentación altera la simulación, es un bug. Ante la duda sob
 
 ## Reglas duras (nunca romper)
 
-1. **Nunca commitear archivos del juego original** ni derivados directos: `.pk3`, `.iwi`, `.bsp`, xmodels, sonidos, scripts GSC, texturas convertidas o extraídas. Tampoco en tests, fixtures ni capturas.
+1. **Nunca commitear archivos del juego original** ni derivados directos: `.pk3`, `.dds`, `.tga`, `.iwi`, `.bsp`, xmodels, sonidos, scripts GSC, texturas convertidas o extraídas. Tampoco en tests, fixtures ni capturas.
 2. **Nunca commitear salidas de decompilación** (pseudocódigo, dumps de ensamblador). Los hallazgos se documentan en prosa y con valores en `docs/re/`, y el código se escribe a partir de esa documentación.
 3. **No usar "Call of Duty", "Activision" ni "Infinity Ward"** en el nombre del proyecto, en la UI, en los iconos ni en los nombres de ejecutables. En la documentación interna se puede nombrar el juego original como referencia.
 4. **La ruta del juego original nunca va hardcodeada.** El juego la lee de la configuración del usuario, y los tests de la variable de entorno `COD1_PATH`.
@@ -37,7 +37,7 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
 ```
 /sim/              Biblioteca C# pura (sin Godot): pmove, armas, daño, IA, VM de GSC
 /sim.tests/        Tests xUnit del núcleo de simulación
-/formats/          Lectores C#: pk3, BSP, IWI, xmodel, configs de armas, GSC (parser)
+/formats/          Lectores C#: pk3, BSP, texturas DDS/TGA, xmodel, configs de armas, GSC (parser)
 /formats.tests/
 /godot/            Proyecto Godot
   /bridge/         Adaptadores sim <-> nodos de Godot (C#)
@@ -127,14 +127,14 @@ Cada hallazgo de REA se documenta en `docs/re/<sistema>.md` con:
 
 ## Decisiones abiertas
 
-- Misión del vertical slice: **misión 3 de la campaña, Sainte-Mère-Église de noche** (la incluida en la demo original). Nombre del archivo de mapa: por confirmar con el inventario del hito 1.
+- Misión del vertical slice: **misión 3 de la campaña, Sainte-Mère-Église de noche** (la incluida en la demo original). Archivo de mapa: `maps/burnville.bsp` (confirmado con el inventario del hito 1).
 - Tiempos de simulación (8 ms de pmove, 50 ms de frame del mundo): **por confirmar** contra el original.
 - Versión exacta de Godot: se anota al instalar.
 
 ## Glosario
 
 - **pk3**: zip renombrado con los datos del juego.
-- **IWI**: formato de textura de CoD.
+- **DDS / TGA**: formatos de textura de CoD1 (comprobado en la instalación: no hay `.iwi`, que es de CoD2). Ver `docs/formats/pk3.md`.
 - **xmodel**: formato de modelos de CoD.
 - **BSP**: mapa compilado (variante del IBSP de Quake 3).
 - **GSC**: lenguaje de scripts de CoD (texto plano).
