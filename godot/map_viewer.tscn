@@ -1,10 +1,10 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://0ehvoc3dwkrc"]
 
-[ext_resource type="Script" path="res://bridge/MapViewer.cs" id="1_viewer"]
-[ext_resource type="Script" path="res://render/fly_camera.gd" id="2_camera"]
+[ext_resource type="Script" uid="uid://cpkauh3q4nyed" path="res://bridge/MapViewer.cs" id="1_viewer"]
+[ext_resource type="Script" uid="uid://clrlmbgt1nvb0" path="res://render/fly_camera.gd" id="2_camera"]
 
-[node name="MapViewer" type="Node3D"]
+[node name="MapViewer" type="Node3D" unique_id=120502499]
 script = ExtResource("1_viewer")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1706622669]
 script = ExtResource("2_camera")
