@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/formats.tests/">
+    <Project Path="formats.tests/Foley.Formats.Tests.csproj" />
+  </Folder>
+  <Folder Name="/formats/">
+    <Project Path="formats/Foley.Formats.csproj" />
+  </Folder>
+  <Folder Name="/sim.tests/">
+    <Project Path="sim.tests/Foley.Sim.Tests.csproj" />
+  </Folder>
+  <Folder Name="/sim/">
+    <Project Path="sim/Foley.Sim.csproj" />
+  </Folder>
+</Solution>

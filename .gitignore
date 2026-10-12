@@ -1,0 +1,33 @@
+﻿# --- Godot (los .import si se versionan en Godot 4) ---
+.godot/
+
+# --- .NET ---
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# --- SEGURIDAD: nada del juego original entra al repo ---
+*.pk3
+*.iwi
+*.bsp
+*.gsc
+*.gsx
+*.dm_*
+*.xmodel*
+*.xanim*
+*.wav
+*.mp3
+*.roq
+*.exe
+*.dll
+overrides/**
+!overrides/.gitkeep
+
+# --- Locales ---
+.env
+*.log
