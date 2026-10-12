@@ -7,7 +7,9 @@ Reimplementación en Godot de la campaña de Call of Duty (2003). Juega **exacta
 **La simulación es CoD1 exacto. Solo cambia la presentación.**
 
 - **Simulación** (fiel al original): movimiento, colisión, armas, daño, hitboxes, IA, scripts GSC y tiempos de las misiones.
-- **Presentación** (moderna): mallas, materiales PBR, luces, GI, efectos, postproceso, audio espacial e interpolación visual.
+- **Presentación**: mallas, materiales, cielo, efectos, sonido, HUD, menús, animaciones, luces, GI, postproceso e interpolación visual.
+
+**Orden de trabajo: primero todo lo original, después lo moderno.** La presentación se recrea primero tal como es en el original (modo clásico), en el mismo hito que el sistema que la usa. Las mejoras modernas (PBR, efectos y audio mejorados) llegan al final. **Única excepción, decidida desde el inicio: la iluminación es nueva, hecha con Godot, en todos los modos** (ver "Iluminación").
 
 Si un cambio de presentación altera la simulación, es un bug. Ante la duda sobre si algo es simulación o presentación, se trata como simulación y se pregunta.
 
@@ -68,15 +70,16 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
 - La presentación **solo lee** el estado de la simulación; nunca lo escribe.
 
 ### Colisión
-- Sale **siempre** de los brushes del BSP original, con trazado propio en `/sim` (no con la física de Godot).
+- Sale **siempre** de la colisión del BSP original (brushes, terreno y curvas), con trazado propio en `/sim` (no con la física de Godot). La colisión de los modelos estáticos (`misc_model`) ya viene horneada en esos brushes.
 - Las mallas remasterizadas son solo visuales y nunca generan colisión.
 
 ### Capa de reemplazo de assets
 - Para cada asset original se busca primero un reemplazo en `overrides/` con la misma ruta lógica. Si no existe, se usa el original convertido en tiempo de carga.
-- Hay un interruptor en vivo **clásico / moderno**: como la simulación es la misma, solo cambia la capa de presentación.
+- Hay un interruptor en vivo **clásico / moderno**: como la simulación es la misma, solo cambia la capa de presentación. La iluminación es la misma en los dos modos.
 
-### Iluminación (modo moderno)
-- Se descartan los lightmaps originales y las texturas se tratan como albedo.
+### Iluminación (nueva, en todos los modos)
+- Decidido desde el inicio: **no se usan los lightmaps originales** en ningún modo; las texturas se tratan como albedo y la luz es de Godot.
+- Las luces de cada mapa imitan la ubicación y el carácter de las del original (las entidades de luz del BSP sirven de guía), porque lo oscuro o visible de una zona afecta a cómo se juega.
 - Las UV de lightmap del BSP se reutilizan como UV2 para LightmapGI.
 - Las luces de cada mapa se definen en un recurso por mapa (`render/maps/<mapa>.tres`), no en código.
 
@@ -116,20 +119,23 @@ Cada hallazgo de REA se documenta en `docs/re/<sistema>.md` con:
 
 ## Hitos
 
+Cada hito incluye la presentación **original** de lo que trae (cómo se ve y se oye en el juego).
+
 1. Lector de pk3 e inventario de contenido.
-2. Lector de BSP e importador: el mapa visible en Godot.
-3. Trazado de colisión y pmove: caminar por un mapa con movimiento validado contra una demo.
-4. VM de GSC: la misión elegida corre sus scripts hasta el primer built-in faltante.
-5. Armas y daño con valores verificados.
-6. IA básica funcional en la misión elegida.
-7. Misión completa jugable de principio a fin (vertical slice).
-8. Modo moderno: materiales PBR, iluminación y GI en esa misión, con el interruptor clásico/moderno.
+2. Mapa original completo en Godot: BSP, modelos del mapa (xmodels), shaders originales (transparencias, mezclas, animación de texturas), cielo original e iluminación nueva de Godot (luces por mapa y GI).
+3. Trazado de colisión (brushes, terreno y curvas) y pmove: caminar por un mapa con movimiento validado contra una demo; posturas, inclinación, escaleras y agua; pasos y sonidos de movimiento.
+4. VM de GSC: la misión elegida corre sus scripts hasta el primer built-in faltante; sonido ambiente, música y diálogos que lanzan los scripts.
+5. Armas y daño con valores verificados, con su presentación original: modelos y animaciones de vista, destellos, estelas, impactos y sonidos.
+6. IA básica funcional en la misión elegida: soldados con sus modelos y animaciones originales.
+7. Misión completa jugable de principio a fin (vertical slice), con HUD, menús y textos originales.
+8. Modo moderno: materiales PBR, efectos y audio mejorados en esa misión, con el interruptor clásico/moderno.
 
 ## Decisiones abiertas
 
 - Misión del vertical slice: **misión 3 de la campaña, Sainte-Mère-Église de noche** (la incluida en la demo original). Archivo de mapa: `maps/burnville.bsp` (confirmado con el inventario del hito 1).
 - Tiempos de simulación (8 ms de pmove, 50 ms de frame del mundo): **por confirmar** contra el original.
-- Versión exacta de Godot: se anota al instalar.
+- Versión exacta de Godot: 4.7.2 estable, edición .NET (falta anotarla en `docs/decisions/0001-version-godot.md`).
+- Iluminación: **decidido**, nueva con Godot en todos los modos, sin lightmaps originales.
 
 ## Glosario
 
