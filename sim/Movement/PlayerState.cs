@@ -47,6 +47,8 @@ public sealed class PlayerState
     public PmFlags Flags;
     public int PmTime;
     public bool OnGround;          // groundEntityNum != ENTITYNUM_NONE (0x7ff)
+    /// <summary>pm_type PM_NOCLIP (truco de depuración): vuela sin colisión.</summary>
+    public bool Noclip;
     public int DeltaPitch, DeltaYaw, DeltaRoll;
     public Vec3 ViewAngles;
     public float ViewHeight;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Foley.Formats.Bsp;
+using Foley.Formats.Materials;
 using Foley.Formats.Pk3;
 using Foley.Formats.XModel;
 using Godot;
@@ -13,7 +14,7 @@ using Godot;
 /// </summary>
 public partial class MapViewer
 {
-	private void BuildModels(BspFile bsp, Pk3Collection pk3)
+	private void BuildModels(BspFile bsp, Pk3Collection pk3, MaterialResolver resolver)
 	{
 		var instances = new Dictionary<string, List<Transform3D>>(StringComparer.OrdinalIgnoreCase);
 		foreach (var e in bsp.Entities)
@@ -21,6 +22,9 @@ public partial class MapViewer
 			var model = e.Get("model");
 			if (model is null || model.StartsWith('*')) continue;
 			if (e.ClassName.StartsWith("actor_", StringComparison.Ordinal)) continue;
+			// Marcadores de efectos del editor: maps/_load.gsc los oculta al cargar el nivel, salvo los
+			// que se llaman "exploderchunk" (trozos que salen volando en una explosión).
+			if (string.Equals(model, "xmodel/fx", StringComparison.OrdinalIgnoreCase) && e.Get("targetname") != "exploderchunk") continue;
 			if (!TryParseVector(e.Get("origin"), out var origin)) continue;
 
 			var angles = Vector3.Zero; // pitch, yaw, roll en grados
@@ -32,13 +36,16 @@ public partial class MapViewer
 			list.Add(EntityTransform(origin, angles, scale));
 		}
 
-		int drawn = 0, failed = 0;
+		int drawn = 0, failed = 0, withLods = 0;
 		foreach (var (path, transforms) in instances)
 		{
-			ArrayMesh? mesh;
+			// Un LOD por cada nombre del xmodel; cada uno se ve hasta su distancia (0 = sin límite).
+			var lods = new List<(ArrayMesh mesh, float maxDist)>();
 			try
 			{
-				mesh = BuildModelMesh(XModelMesh.Load(pk3, path), pk3);
+				var file = XModelFile.Read(pk3.ReadAllBytes(path));
+				for (var l = 0; l < file.Lods.Length; l++)
+					lods.Add((BuildModelMesh(XModelMesh.Load(pk3, path, l), resolver), file.Lods[l].Distance));
 			}
 			catch (Exception ex)
 			{
@@ -46,17 +53,45 @@ public partial class MapViewer
 				failed++;
 				continue;
 			}
-			var multi = new MultiMesh
+
+			if (lods.Count == 1)
 			{
-				TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-				Mesh = mesh,
-				InstanceCount = transforms.Count,
-			};
-			for (var i = 0; i < transforms.Count; i++) multi.SetInstanceTransform(i, transforms[i]);
-			AddChild(new MultiMeshInstance3D { Multimesh = multi, Name = path.Replace('/', '_') });
+				var multi = new MultiMesh
+				{
+					TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+					Mesh = lods[0].mesh,
+					InstanceCount = transforms.Count,
+				};
+				for (var i = 0; i < transforms.Count; i++) multi.SetInstanceTransform(i, transforms[i]);
+				AddChild(new MultiMeshInstance3D { Multimesh = multi, Name = path.Replace('/', '_') });
+			}
+			else
+			{
+				// El rango de visibilidad de Godot es por nodo, así que cada instancia va suelta.
+				// TODO(presentación): distancia en unidades del juego tal cual, sin r_lodScale ni campo de visión.
+				withLods++;
+				foreach (var t in transforms)
+				{
+					var begin = 0f;
+					for (var l = 0; l < lods.Count; l++)
+					{
+						var end = lods[l].maxDist > 0 ? lods[l].maxDist * MetersPerUnit : 0f;
+						AddChild(new MeshInstance3D
+						{
+							Mesh = lods[l].mesh,
+							Transform = t,
+							VisibilityRangeBegin = begin,
+							VisibilityRangeEnd = end,
+							Name = path.Replace('/', '_') + "_lod" + l,
+						});
+						if (end <= 0) break;
+						begin = end;
+					}
+				}
+			}
 			drawn += transforms.Count;
 		}
-		GD.Print($"[MapViewer] modelos: {instances.Count} distintos, {drawn} instancias, {failed} sin cargar");
+		GD.Print($"[MapViewer] modelos: {instances.Count} distintos ({withLods} con LODs), {drawn} instancias, {failed} sin cargar");
 	}
 
 	/// <summary>
@@ -80,19 +115,29 @@ public partial class MapViewer
 		return new Transform3D(basis, ToGodot(origin.X, origin.Y, origin.Z) * MetersPerUnit);
 	}
 
-	private ArrayMesh BuildModelMesh(XModelMesh model, Pk3Collection pk3)
+	private ArrayMesh BuildModelMesh(XModelMesh model, MaterialResolver resolver)
 	{
 		var mesh = new ArrayMesh();
 		foreach (var s in model.Surfaces)
 		{
+			// Shader de la skin: shader propio o plantilla shadertypes/model/<tipo>.stype.
+			var resolved = resolver.Resolve("skins/" + s.Material, MaterialKind.Model);
+			var radial = resolved.Shader.RadialNormals;
+
 			var n = s.Positions.Length / 3;
 			var positions = new Vector3[n];
 			var normals = new Vector3[n];
 			var uv = new Vector2[n];
 			for (var v = 0; v < n; v++)
 			{
-				positions[v] = ToGodot(s.Positions[v * 3], s.Positions[v * 3 + 1], s.Positions[v * 3 + 2]) * MetersPerUnit;
-				normals[v] = ToGodot(s.Normals[v * 3], s.Normals[v * 3 + 1], s.Normals[v * 3 + 2]);
+				var px = s.Positions[v * 3];
+				var py = s.Positions[v * 3 + 1];
+				var pz = s.Positions[v * 3 + 2];
+				positions[v] = ToGodot(px, py, pz) * MetersPerUnit;
+				// radialNormals: normales que salen del origen del modelo (follaje), en vez de las de la malla.
+				normals[v] = radial
+					? ToGodot(px, py, pz).Normalized()
+					: ToGodot(s.Normals[v * 3], s.Normals[v * 3 + 1], s.Normals[v * 3 + 2]);
 				uv[v] = new Vector2(s.UVs[v * 2], s.UVs[v * 2 + 1]);
 			}
 			var arrays = new Godot.Collections.Array();
@@ -102,54 +147,19 @@ public partial class MapViewer
 			arrays[(int)Mesh.ArrayType.TexUV] = uv;
 			// Mismo giro que el BSP (docs/formats/xmodel.md).
 			arrays[(int)Mesh.ArrayType.Index] = s.Triangles;
-			mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-			mesh.SurfaceSetMaterial(mesh.GetSurfaceCount() - 1, MakeSkinMaterial(pk3, s.Material));
+			StageMaterials.AddSurface(mesh, arrays, positions, StageMaterials.Deform(resolved.Shader));
+			mesh.SurfaceSetMaterial(mesh.GetSurfaceCount() - 1, SkinMaterial(resolved));
 		}
 		return mesh;
 	}
 
 	private readonly Dictionary<string, Material> _skinMaterials = new(StringComparer.OrdinalIgnoreCase);
 
-	private Material MakeSkinMaterial(Pk3Collection pk3, string skin)
+	private Material SkinMaterial(ResolvedMaterial resolved)
 	{
-		if (_skinMaterials.TryGetValue(skin, out var cached)) return cached;
-		var m = new StandardMaterial3D
-		{
-			Roughness = 1f,
-			TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
-		};
-		// Tipo de superficie: lo que va antes de '@' (foliage_masked, metal_masked, glass...).
-		var at = skin.IndexOf('@');
-		var type = at > 0 ? skin[..at].ToLowerInvariant() : "";
-		var foliage = type.StartsWith("foliage", StringComparison.Ordinal);
-		var masked = foliage || type.Contains("masked", StringComparison.Ordinal);
-
-		var path = "skins/" + skin;
-		// Las skins de follaje guardan la forma con alfa 0 y el fondo con alfa 255 (docs/formats/xmodel.md).
-		var key = foliage ? path + "|inv" : path;
-		var tex = pk3.Contains(path) ? LoadTexture(pk3, path, invertAlpha: foliage) : null;
-		if (tex is null)
-		{
-			m.AlbedoColor = new Color(1f, 0f, 1f);
-		}
-		else
-		{
-			m.AlbedoTexture = tex;
-			if (masked && _alphaTextures.Contains(key))
-			{
-				// Recorte por alfa al 50 % (alphaFunc GE128 de los shaders de id Tech 3).
-				m.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-				m.AlphaScissorThreshold = 0.5f;
-			}
-			else if (type.StartsWith("glass", StringComparison.Ordinal) && _alphaTextures.Contains(key))
-			{
-				m.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-			}
-		}
-		// Las tarjetas recortadas se ven por las dos caras (supuesto de presentación).
-		if (masked)
-			m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-		_skinMaterials[skin] = m;
+		if (_skinMaterials.TryGetValue(resolved.Name, out var cached)) return cached;
+		var m = _stages!.Build(resolved.Shader) ?? new StandardMaterial3D { AlbedoColor = new Color(1f, 0f, 1f) };
+		_skinMaterials[resolved.Name] = m;
 		return m;
 	}
 

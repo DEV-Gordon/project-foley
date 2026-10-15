@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="MapLighting" format=3]
+
+[ext_resource type="Script" path="res://bridge/MapLighting.cs" id="1_lighting"]
+
+[resource]
+script = ExtResource("1_lighting")
+PointEnergy = 2.0
+RangeScale = 1.0
+SpotEnergy = 3.0
+PointShadows = true
+SpotShadows = true
+SunEnergyScale = 0.5
+SunTint = Color(1, 1, 1, 1)
+SunShadows = true
+SunAngularDistance = 1.5
+AmbientScale = 1.0
+Sdfgi = true
+SdfgiEnergy = 1.0
+Exposure = 1.5

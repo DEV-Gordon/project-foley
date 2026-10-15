@@ -95,6 +95,12 @@ public sealed class Pmove
         UpdateViewAngles(ps, cmd);
         QMath.AngleVectors(ps.ViewAngles, out _forward, out _right, out _);
 
+        if (ps.Noclip)
+        {
+            NoclipMove();
+            return;
+        }
+
         if (_cmd.UpMove < 10) ps.Flags &= ~PmFlags.JumpHeld;
 
         ps.ViewHeight = _cfg.ViewHeight; // de pie (PM_CheckDuck de CoD1 sin portar)
@@ -123,6 +129,63 @@ public sealed class Pmove
             var inv = 1.0 / _frameTime;
             ps.Velocity = new Vec3((float)(inv * fdx), (float)(inv * fdy), (float)(inv * fdz));
         }
+    }
+
+    /// <summary>
+    /// Noclip (pm_type PM_NOCLIP). Portado de ioquake3 code/game/bg_pmove.c, PM_NoclipMove y
+    /// PM_CmdScale. Es un truco de depuración, no jugabilidad.
+    /// TODO(fidelidad): fricción (6 · 1.5) y aceleración (10) son las de Quake 3; las de CoD1 sin verificar.
+    /// </summary>
+    private void NoclipMove()
+    {
+        const float pmFriction = 6f;
+        const float pmAccelerate = 10f;
+        _ps.ViewHeight = _cfg.ViewHeight;
+        _ps.OnGround = false;
+
+        var v = _ps.Velocity;
+        var speed = (float)System.Math.Sqrt((double)v.X * v.X + (double)v.Y * v.Y + (double)v.Z * v.Z);
+        if (speed < 1f)
+        {
+            _ps.Velocity = Vec3.Zero;
+        }
+        else
+        {
+            var friction = pmFriction * 1.5f; // fricción extra
+            var control = speed < _cfg.StopSpeed ? _cfg.StopSpeed : speed;
+            var drop = control * friction * _frameTime;
+            var newspeed = speed - drop;
+            if (newspeed < 0) newspeed = 0;
+            _ps.Velocity = v * (newspeed / speed);
+        }
+
+        // PM_CmdScale de Quake 3
+        float fmove = _cmd.ForwardMove, smove = _cmd.RightMove, umove = _cmd.UpMove;
+        var max = System.Math.Max(System.Math.Abs(fmove), System.Math.Max(System.Math.Abs(smove), System.Math.Abs(umove)));
+        var scale = 0f;
+        if (max > 0)
+        {
+            var total = (float)System.Math.Sqrt(fmove * fmove + smove * smove + umove * umove);
+            scale = _cfg.Speed * max / (127f * total);
+        }
+
+        var wishvel = new Vec3(
+            _forward.X * fmove + _right.X * smove,
+            _forward.Y * fmove + _right.Y * smove,
+            _forward.Z * fmove + _right.Z * smove + umove);
+        var wishspeed = QMath.Normalize(ref wishvel) * scale;
+
+        // PM_Accelerate de Quake 3 (sin las variantes de CoD1)
+        var cur = _ps.Velocity;
+        var addspeed = wishspeed - Vec3.Dot(cur, wishvel);
+        if (addspeed > 0)
+        {
+            var accelspeed = pmAccelerate * _frameTime * wishspeed;
+            if (accelspeed > addspeed) accelspeed = addspeed;
+            _ps.Velocity = Vec3.MA(cur, accelspeed, wishvel);
+        }
+
+        _ps.Origin = Vec3.MA(_ps.Origin, _frameTime, _ps.Velocity);
     }
 
     /// <summary>PM_UpdateViewAngles @0x20006fd0 (parte común, sin escaleras ni tumbado).</summary>

@@ -13,19 +13,11 @@ Las texturas de los materiales están en `skins/<material>` (el nombre ya trae l
 
 **Alfa invertido en el follaje.** En las skins cuyo tipo empieza por `foliage`
 (`foliage_masked@`, `foliage_detail@`) la forma (hojas, ramas, hierba) tiene **alfa 0** y el
-fondo **alfa 255**, relleno con un color plano. El resto de skins `_masked` (`metal_masked@`,
-`wood_masked@`, `objective_incomplete_masked@`...) y las texturas del BSP usan la convención
-normal (forma con alfa 255). Evidencia: inspección visual del color y del alfa de las 14 skins
-de follaje y las 14 `_masked` de otros tipos que usa burnville, más un recuento automático de
-las 175 skins de follaje de la instalación (fondo plano con alfa alto en casi todas). El visor
-invierte el alfa de esas skins al cargarlas y recorta al 50 %. Confianza: **probable**; falta
-localizar en el renderer del ejecutable dónde se aplica (REA).
-
-Fuentes: lectura de los 1019 xmodels de la instalación (todos cuadran byte a byte con esta
-descripción) y, para las mallas, el cargador del ejecutable (CoDSP 1.5 en memoria:
-`0x47f8a0` carga el archivo, `0x47f190` lee una superficie, `0x47f000` lee un hueso + posición,
-`0x47f090` convierte tiras en triángulos). Nombres de mensaje: "xmodelsurfs '%s' out of date
-(version %d, expecting %d)", con 14 como versión esperada.
+fondo **alfa 255**, relleno con un color plano. Lo explica la plantilla del tipo:
+`shadertypes/model/foliage_masked.stype` y `foliage_detail.stype` usan `alphaFunc LT128` (dibujar
+donde alfa < 128), mientras que el resto de skins `_masked` usan `GE128`. El visor aplica la
+plantilla de cada skin (ver `docs/formats/shader.md`). Confianza: **confirmado con los datos**
+(plantillas del juego e inspección de las 28 skins con transparencia de burnville).
 
 ## xmodel/
 
@@ -92,3 +84,10 @@ Tiras → triángulos (`0x47f090`): el primero es `(i0, i1, i2)`; luego, para k 
 `(i[k−1], i[k−2], i[k])` y, si existe `i[k+1]`, `(i[k−1], i[k], i[k+1])`. Se descartan los
 triángulos con índices repetidos (las tiras empiezan repitiendo el primer índice para fijar el giro).
 El orden resultante es el mismo que el de los triángulos del BSP.
+
+## LODs
+
+Cada LOD con nombre se dibuja hasta su distancia (unidades del juego; 0 = sin límite) y el siguiente
+a partir de ahí: `tallskinnytreea` = 1000 / 3000 / sin límite. En burnville, 21 modelos tienen más de
+un LOD. TODO(presentación): distancia tal cual, sin `r_lodScale` ni la corrección por campo de visión
+que pueda aplicar el original.

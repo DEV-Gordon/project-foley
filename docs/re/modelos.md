@@ -35,3 +35,10 @@ Confianza: **probable**. Se mantiene la regla de CLAUDE.md: toda la colisión de
 
 Pendiente: los `script_model` y los ítems son entidades con colisión propia en tiempo de
 ejecución. Se verán con las entidades (hitos 4–6).
+
+## Marcadores de efectos (`xmodel/fx`)
+
+Los `script_model` con `model xmodel/fx` (letras "FX" azules) son marcadores del editor: indican dónde
+lanza el script un efecto (`script_fxid`, `script_exploder`, `script_fxcommand`). `maps/_load.gsc`
+(línea 208) los oculta al cargar el nivel, salvo los que se llaman `exploderchunk`. El visor aplica
+la misma regla mientras no se ejecuten los scripts (hito 4).

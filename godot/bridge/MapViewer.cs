@@ -58,20 +58,27 @@ public partial class MapViewer : Node3D
 		{
 			bsp = BspFile.Read(pk3.ReadAllBytes(MapPath));
 			var resolver = new MaterialResolver(pk3);
-			BuildMap(bsp, pk3, resolver);
-			BuildModels(bsp, pk3);
+			_stages = new StageMaterials(path =>
+				resolver.FindTexture(path) is { } file ? LoadTexture(pk3, file) : null);
+			BuildMap(bsp, resolver);
+			BuildModels(bsp, pk3, resolver);
+			BuildSky(bsp, pk3, resolver);
+			BuildFlares(bsp, pk3, resolver);
+			_stages = null;
 		}
 		GD.Print($"[MapViewer] {MapPath}: {bsp.Surfaces.Length} superficies, {bsp.Vertices.Length} vértices, {sw.ElapsedMilliseconds} ms");
 
 		PlaceCamera(bsp, args);
-		AddLighting();
+		AddLighting(bsp);
 		AddHud();
 		MapLoaded?.Invoke(bsp);
 
-		if (args.TryGetValue("shot", out var shotPath)) _ = TakeScreenshotAndQuit(shotPath);
+		if (args.TryGetValue("shot", out var shotPath)) _ = TakeScreenshotAndQuit(shotPath, args.TryGetValue("wait", out var w) ? Parse(w) : 0f);
 	}
 
-	private void BuildMap(BspFile bsp, Pk3Collection pk3, MaterialResolver resolver)
+	private StageMaterials? _stages;
+
+	private void BuildMap(BspFile bsp, MaterialResolver resolver)
 	{
 		var bySurfaceMaterial = new Dictionary<int, List<BspSurface>>();
 		foreach (var s in bsp.Surfaces)
@@ -88,8 +95,13 @@ public partial class MapViewer : Node3D
 			if (resolved.IsSky) { skippedSky += surfaces.Count; continue; }
 			if (resolved.NoDraw) { skippedNoDraw += surfaces.Count; continue; }
 
-			var mesh = BuildMesh(bsp, surfaces);
-			var material = MakeMaterial(pk3, resolved, ref untextured);
+			var mesh = BuildMesh(bsp, surfaces, StageMaterials.Deform(resolved.Shader));
+			var material = _stages!.Build(resolved.Shader);
+			if (material is null)
+			{
+				untextured++;
+				material = new StandardMaterial3D { AlbedoColor = new Color(1f, 0f, 1f) };
+			}
 			mesh.SurfaceSetMaterial(0, material);
 			AddChild(new MeshInstance3D { Mesh = mesh, Name = resolved.Name.Replace('/', '_') });
 			drawnSurfaces += surfaces.Count;
@@ -97,7 +109,7 @@ public partial class MapViewer : Node3D
 		GD.Print($"[MapViewer] dibujadas {drawnSurfaces} superficies; omitidas: cielo {skippedSky}, nodraw {skippedNoDraw}; materiales sin textura: {untextured}");
 	}
 
-	private static ArrayMesh BuildMesh(BspFile bsp, List<BspSurface> surfaces)
+	private static ArrayMesh BuildMesh(BspFile bsp, List<BspSurface> surfaces, StageMaterials.SpriteDeform deform)
 	{
 		var vertexTotal = 0;
 		var indexTotal = 0;
@@ -107,6 +119,7 @@ public partial class MapViewer : Node3D
 		var normals = new Vector3[vertexTotal];
 		var uv = new Vector2[vertexTotal];
 		var uv2 = new Vector2[vertexTotal];
+		var colors = new Color[vertexTotal];
 		var indices = new int[indexTotal];
 
 		var v = 0;
@@ -121,6 +134,8 @@ public partial class MapViewer : Node3D
 				normals[v] = ToGodot(src.Nx, src.Ny, src.Nz);
 				uv[v] = new Vector2(src.U, src.V);
 				uv2[v] = new Vector2(src.LmU, src.LmV);
+				// Color de vértice tal cual (rgbGen/alphaGen vertex lo usan; el shader lo linealiza).
+				colors[v] = new Color(src.R / 255f, src.G / 255f, src.B / 255f, src.A / 255f);
 			}
 			// El giro horario del original coincide con el frontal de Godot al ser una rotación propia.
 			for (var k = 0; k < s.IndexCount; k++, i++)
@@ -133,10 +148,12 @@ public partial class MapViewer : Node3D
 		arrays[(int)Mesh.ArrayType.Normal] = normals;
 		arrays[(int)Mesh.ArrayType.TexUV] = uv;
 		arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
+		arrays[(int)Mesh.ArrayType.Color] = colors;
 		arrays[(int)Mesh.ArrayType.Index] = indices;
 
 		var mesh = new ArrayMesh();
-		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		// deformVertexes autosprite/autosprite2: datos por vértice en CUSTOM0/CUSTOM1.
+		StageMaterials.AddSurface(mesh, arrays, positions, deform);
 		return mesh;
 	}
 
@@ -146,39 +163,10 @@ public partial class MapViewer : Node3D
 	/// <summary>Posición de la simulación (unidades y ejes originales) a posición de Godot (metros, Y arriba).</summary>
 	public static Vector3 SimToGodot(float x, float y, float z) => ToGodot(x, y, z) * MetersPerUnit;
 
-	private StandardMaterial3D MakeMaterial(Pk3Collection pk3, ResolvedMaterial resolved, ref int untextured)
+	/// <summary>Carga una textura del pk3 (DDS, TGA o JPG) con mipmaps; cacheada por ruta.</summary>
+	private Texture2D? LoadTexture(Pk3Collection pk3, string path)
 	{
-		var m = new StandardMaterial3D
-		{
-			Roughness = 1f,
-			TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmapsAnisotropic,
-		};
-		var tex = resolved.TexturePath is null ? null : LoadTexture(pk3, resolved.TexturePath);
-		if (tex is null)
-		{
-			untextured++;
-			m.AlbedoColor = new Color(1f, 0f, 1f);
-			return m;
-		}
-		m.AlbedoTexture = tex;
-		if (_alphaTextures.Contains(resolved.TexturePath!))
-		{
-			m.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-			m.AlphaScissorThreshold = 0.5f;
-		}
-		return m;
-	}
-
-	private readonly HashSet<string> _alphaTextures = new();
-
-	/// <param name="invertAlpha">
-	/// Invierte el canal alfa (skins de follaje de los modelos, que guardan la forma con alfa 0;
-	/// ver docs/formats/xmodel.md). Se cachea aparte con la clave <c>ruta|inv</c>.
-	/// </param>
-	private Texture2D? LoadTexture(Pk3Collection pk3, string path, bool invertAlpha = false)
-	{
-		var key = invertAlpha ? path + "|inv" : path;
-		if (_textures.TryGetValue(key, out var cached)) return cached;
+		if (_textures.TryGetValue(path, out var cached)) return cached;
 
 		Texture2D? result = null;
 		try
@@ -198,9 +186,8 @@ public partial class MapViewer : Node3D
 			}
 			else
 			{
-				if (invertAlpha) InvertAlpha(image);
-				if (!image.IsCompressed() && !image.HasMipmaps()) image.GenerateMipmaps();
-				if (image.DetectAlpha() != Image.AlphaMode.None) _alphaTextures.Add(key);
+				if (!TryCustomMipmaps(pk3, path, ref image) && !image.IsCompressed() && !image.HasMipmaps())
+					image.GenerateMipmaps();
 				result = ImageTexture.CreateFromImage(image);
 			}
 		}
@@ -208,18 +195,58 @@ public partial class MapViewer : Node3D
 		{
 			GD.PushWarning($"[MapViewer] error cargando {path}: {e.Message}");
 		}
-		_textures[key] = result;
+		_textures[path] = result;
 		return result;
 	}
 
-	/// <summary>Invierte el alfa de todos los niveles de la imagen (descomprime DDS a RGBA8).</summary>
-	private static void InvertAlpha(Image image)
+	/// <summary>
+	/// Cadena de mips hecha a mano: las texturas <c>nombre#0</c> traen sus niveles siguientes como
+	/// <c>nombre#1</c>, <c>nombre#2</c>... (56 en la instalación; p. ej. los cables, para que no
+	/// desaparezcan de lejos). Se usan esos niveles y los más pequeños que falten se generan
+	/// reduciendo el último. Supuesto sin verificar en el ejecutable (REA): solo hay evidencia de los datos.
+	/// </summary>
+	private static bool TryCustomMipmaps(Pk3Collection pk3, string path, ref Image level0)
 	{
-		if (image.IsCompressed()) image.Decompress();
-		if (image.GetFormat() != Image.Format.Rgba8) image.Convert(Image.Format.Rgba8);
-		var data = image.GetData();
-		for (var i = 3; i < data.Length; i += 4) data[i] = (byte)(255 - data[i]);
-		image.SetData(image.GetWidth(), image.GetHeight(), image.HasMipmaps(), Image.Format.Rgba8, data);
+		var dot = path.LastIndexOf('.');
+		if (dot < 2 || path[dot - 2] != '#' || path[dot - 1] != '0') return false;
+		var stem = path[..(dot - 1)];
+		if (level0.IsCompressed()) level0.Decompress();
+		if (level0.HasMipmaps()) level0.ClearMipmaps();
+		level0.Convert(Image.Format.Rgba8);
+
+		var levels = new List<Image> { level0 };
+		int w = level0.GetWidth(), h = level0.GetHeight();
+		for (var n = 1; w > 1 || h > 1; n++)
+		{
+			w = Math.Max(1, w / 2);
+			h = Math.Max(1, h / 2);
+			Image? next = null;
+			foreach (var ext in new[] { ".dds", ".tga", ".jpg" })
+			{
+				var file = stem + n + ext;
+				if (!pk3.Contains(file)) continue;
+				var img = new Image();
+				var bytes = pk3.ReadAllBytes(file);
+				var e = ext == ".dds" ? img.LoadDdsFromBuffer(bytes) : ext == ".tga" ? img.LoadTgaFromBuffer(bytes) : img.LoadJpgFromBuffer(bytes);
+				if (e != Error.Ok) break;
+				if (img.HasMipmaps()) img.ClearMipmaps();
+				if (img.IsCompressed()) img.Decompress();
+				img.Convert(Image.Format.Rgba8);
+				if (img.GetWidth() == w && img.GetHeight() == h) next = img;
+				break;
+			}
+			if (next is null)
+			{
+				next = (Image)levels[^1].Duplicate();
+				next.Resize(w, h, Image.Interpolation.Bilinear);
+			}
+			levels.Add(next);
+		}
+		if (levels.Count < 2) return false;
+		var data = new List<byte>();
+		foreach (var l in levels) data.AddRange(l.GetData());
+		level0 = Image.CreateFromData(level0.GetWidth(), level0.GetHeight(), true, Image.Format.Rgba8, data.ToArray());
+		return true;
 	}
 
 	private void PlaceCamera(BspFile bsp, Dictionary<string, string> args)
@@ -252,42 +279,6 @@ public partial class MapViewer : Node3D
 		var pitch = args.TryGetValue("pitch", out var pi) ? Parse(pi) : 0f;
 		cam.RotationDegrees = new Vector3(pitch, yaw, 0);
 	}
-
-	private void AddLighting()
-	{
-		// Solo para poder inspeccionar el mapa; la iluminación real es del hito 8.
-		// Si la escena ya trae su entorno o su sol (p. ej. luztest.tscn) se respetan y no se añade otro.
-		WorldEnvironment? sceneEnvironment = null;
-		var sceneHasSun = false;
-		foreach (var child in GetChildren())
-		{
-			if (child is WorldEnvironment we) sceneEnvironment ??= we;
-			else if (child is DirectionalLight3D) sceneHasSun = true;
-		}
-
-		if (sceneEnvironment is not null)
-		{
-			sceneEnvironment.Environment ??= CreateInspectionEnvironment();
-			_environment = sceneEnvironment.Environment;
-		}
-		else
-		{
-			_environment = CreateInspectionEnvironment();
-			AddChild(new WorldEnvironment { Environment = _environment });
-		}
-
-		if (!sceneHasSun)
-			AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-50, 30, 0), LightEnergy = 0.6f });
-	}
-
-	private static Godot.Environment CreateInspectionEnvironment() => new()
-	{
-		AmbientLightSource = Godot.Environment.AmbientSource.Color,
-		AmbientLightColor = new Color(0.8f, 0.82f, 0.9f),
-		AmbientLightEnergy = 1.0f,
-		BackgroundMode = Godot.Environment.BGMode.Color,
-		BackgroundColor = new Color(0.05f, 0.06f, 0.1f),
-	};
 
 	private void AddHud()
 	{
@@ -333,9 +324,11 @@ public partial class MapViewer : Node3D
 					"WASD mover | Q/E bajar/subir | Shift rapido | clic derecho: girar";
 	}
 
-	private async System.Threading.Tasks.Task TakeScreenshotAndQuit(string path)
+	/// <summary>Captura tras 5 cuadros y, si se pide, <paramref name="waitSeconds"/> más (para los desvanecidos).</summary>
+	private async System.Threading.Tasks.Task TakeScreenshotAndQuit(string path, float waitSeconds)
 	{
 		for (var i = 0; i < 5; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		if (waitSeconds > 0) await ToSignal(GetTree().CreateTimer(waitSeconds), SceneTreeTimer.SignalName.Timeout);
 		var image = GetViewport().GetTexture().GetImage();
 		var err = image.SavePng(path);
 		GD.Print($"[MapViewer] captura -> {path}: {err}");

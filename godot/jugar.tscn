@@ -18,7 +18,6 @@ sky_material = SubResource("ProceduralSkyMaterial_3uayw")
 background_mode = 2
 sky = SubResource("Sky_4iyw2")
 ambient_light_source = 3
-tonemap_exposure = 1.5
 ssr_enabled = true
 ssao_enabled = true
 sdfgi_enabled = true
@@ -28,6 +27,7 @@ volumetric_fog_albedo = Color(0.35, 0.4, 0.55, 1)
 
 [node name="MapViewer" type="Node3D" unique_id=1885298738]
 script = ExtResource("1_viewer")
+MapPath = "maps/dawnville.bsp"
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=998868721]
 far = 3000.0
@@ -37,10 +37,3 @@ script = ExtResource("2_player")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=290653231]
 environment = SubResource("Environment_avws3")
-
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1144585684]
-transform = Transform3D(0.7660444, -0.3686878, 0.5265408, 0, 0.819152, 0.5735764, -0.6427876, -0.439385, 0.6275069, 0, 0, 0)
-light_color = Color(0.6, 0.72, 1, 1)
-light_energy = 0.35
-light_angular_distance = 1.5
-shadow_enabled = true

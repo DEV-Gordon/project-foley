@@ -97,6 +97,10 @@ public partial class PlayerController : Node
 			case InputEventKey { Pressed: true, Echo: false, Keycode: Key.R }:
 				Respawn();
 				break;
+			case InputEventKey { Pressed: true, Echo: false, Keycode: Key.N }:
+				_ps.Noclip = !_ps.Noclip;
+				_ps.Velocity = Vec3.Zero;
+				break;
 			case InputEventMouseMotion motion when Input.MouseMode == Input.MouseModeEnum.Captured:
 				_viewYaw -= motion.Relative.X * MouseSensitivity;
 				_viewPitch = Mathf.Clamp(_viewPitch + motion.Relative.Y * MouseSensitivity, -89f, 89f);
@@ -116,6 +120,7 @@ public partial class PlayerController : Node
 		if (Input.IsKeyPressed(Key.D)) right += 127;
 		if (Input.IsKeyPressed(Key.A)) right -= 127;
 		if (Input.IsKeyPressed(Key.Space)) up = 127;
+		if (_ps.Noclip && Input.IsKeyPressed(Key.C)) up = -127; // en noclip, C baja
 
 		var cmd = new UserCmd(_simTime,
 			QMath.AngleToShort(_viewPitch), QMath.AngleToShort(_viewYaw), 0,
@@ -137,9 +142,10 @@ public partial class PlayerController : Node
 		{
 			var v = _ps.Velocity;
 			var speed = MathF.Sqrt(v.X * v.X + v.Y * v.Y);
-			_hud.Text = $"Jugador: clic = capturar ratón, Esc = soltar, R = reiniciar | WASD + Espacio\n" +
+			var state = _ps.Noclip ? "NOCLIP" : _ps.OnGround ? "en suelo" : "en el aire";
+			_hud.Text = $"Jugador: clic = capturar ratón, Esc = soltar, R = reiniciar, N = noclip (Espacio/C: subir/bajar) | WASD + Espacio\n" +
 						$"pos ({_ps.Origin.X:0.0}, {_ps.Origin.Y:0.0}, {_ps.Origin.Z:0.0})  vel {speed:0} u/s  " +
-						$"{(_ps.OnGround ? "en suelo" : "en el aire")}  t={_simTime} ms";
+						$"{state}  t={_simTime} ms";
 		}
 	}
 

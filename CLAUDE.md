@@ -80,7 +80,7 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
 ### Iluminación (nueva, en todos los modos)
 - Decidido desde el inicio: **no se usan los lightmaps originales** en ningún modo; las texturas se tratan como albedo y la luz es de Godot.
 - Las luces de cada mapa imitan la ubicación y el carácter de las del original (las entidades de luz del BSP sirven de guía), porque lo oscuro o visible de una zona afecta a cómo se juega.
-- Las UV de lightmap del BSP se reutilizan como UV2 para LightmapGI.
+- GI en tiempo real con **SDFGI**: las mallas se generan al cargar desde el BSP del jugador, así que no hay nada que hornear con LightmapGI. Las UV de lightmap se siguen cargando como UV2 por si más adelante se hornea (ver `docs/decisions/0003-iluminacion.md`).
 - Las luces de cada mapa se definen en un recurso por mapa (`render/maps/<mapa>.tres`), no en código.
 
 ## Fuentes de verdad para la fidelidad (en orden)
@@ -134,8 +134,9 @@ Cada hito incluye la presentación **original** de lo que trae (cómo se ve y se
 
 - Misión del vertical slice: **misión 3 de la campaña, Sainte-Mère-Église de noche** (la incluida en la demo original). Archivo de mapa: `maps/burnville.bsp` (confirmado con el inventario del hito 1).
 - Tiempos de simulación (8 ms de pmove, 50 ms de frame del mundo): **por confirmar** contra el original.
-- Versión exacta de Godot: 4.7.2 estable, edición .NET (falta anotarla en `docs/decisions/0001-version-godot.md`).
+- Versión exacta de Godot: 4.7.2 estable, edición .NET (anotada en `docs/decisions/0001-version-godot.md`).
 - Iluminación: **decidido**, nueva con Godot en todos los modos, sin lightmaps originales.
+- Hito 2: **cerrado** en presentación original (shaders, cielo, luna, coronas, LODs). Supuestos de presentación pendientes de verificar contra el juego: marcados con `TODO(presentación)` en `docs/formats/shader.md` y `docs/formats/xmodel.md`.
 
 ## Glosario
 
