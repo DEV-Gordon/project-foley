@@ -94,8 +94,9 @@ Orden (confianza **probable** salvo lo marcado):
   - `x = r·cos(ángulo)` e `y = r·sin(ángulo)`; el orden seno/coseno está por confirmar.
   - `fin = origen + adelante·8192 + derecha·x·tan(s)·8192 + arriba·y·tan(s)·8192`.
   - `rand()` es el de la CRT de MSVC: `x = x·214013 + 2531011`, devuelve `(x >> 16) & 0x7fff`.
-    Para la fidelidad hay que reproducir la secuencia y su semilla. `TODO(fidelidad)`: buscar la
-    semilla (`srand`) y quién más consume `rand()` en un frame.
+    Su semilla en el original es el reloj real al cargar el nivel (ver `gsc.md`,
+    "Aleatoriedad"), así que la secuencia exacta no se puede reproducir. Se reproduce la
+    fórmula y la distribución con una semilla fija.
 - **Trazado** (`0x20048bd0`): máscara `0x280e031`. Con `rifleBullet 1`: MOD 2 (rifle), bandera
   `0x40` y la tabla de prioridad de rifle; si no, MOD 1 (pistola).
 - **Atraviesa** (recursivo, como máximo 12 veces; con más, "Too many resursions"):
@@ -108,6 +109,36 @@ Orden (confianza **probable** salvo lo marcado):
 - Daño: el `damage` del arma, por `G_Damage` con la zona del trazado.
 - Efectos: evento de impacto en la carne o en la superficie, con su tipo de superficie (bits 20–24
   de las banderas de superficie) y la normal comprimida.
+
+## Trazado contra personajes: cajas por hueso (`CoDSP.exe`)
+
+Confianza **confirmado** (binario) salvo lo indicado.
+
+- La llamada del juego `0x3b` (y `0x32`/`0x33`, que comparten la función `0x44e6c0`) traza
+  primero contra el mundo y luego contra las entidades del árbol de áreas (`0x420390`; recorre
+  nodos con eje y distancia, como `sv_world.c` de Quake 3).
+- **Por entidad** (`0x44e110`), si el trazado pide zonas (lleva tabla de prioridad) y la entidad
+  tiene modelo animado y la bandera de servidor `0x8` (actor) o `0x10` (cliente):
+  1. **Rechazo rápido** contra una caja. Actores: (−64, −64, −32)–(64, 64, 72) alrededor del
+     origen (`0x5689e0`). Clientes: los límites del modelo.
+  2. Se pide al juego que actualice la pose del modelo en este instante (mensaje 0x15 de
+     `vmMain`) y se calculan las matrices de los huesos.
+  3. **Trazado contra los huesos** (`0x4776b0`):
+     - Cada hueso tiene una caja en su espacio local y una zona de impacto. Las dos salen de
+       `xmodelparts`, ver `docs/formats/xmodel.md`.
+     - Se descarta el hueso si su prioridad (tabla de prioridad de la bala, indexada por la zona)
+       es menor que la mejor encontrada hasta ahora; se empieza en 2, así que la zona `none`, de
+       prioridad 1, nunca recibe impactos.
+     - También se descarta si la esfera envolvente (centro = mitad de la caja,
+       radio² = |máx − centro|²) no corta el rayo, y si el radio² es 0.
+     - Si no, se hace la prueba de *slabs* contra la caja en el espacio del hueso.
+     - **Gana la prioridad más alta aunque esté más lejos**; a igual prioridad, el impacto más
+       cercano. Con bala de rifle (cabeza 9 > torso 8 > ...), un rayo que atraviesa torso y
+       cabeza da en la cabeza. Con bala normal (todo 3), da en lo primero que toca.
+     - Si el origen está dentro de la caja, la fracción es 0.
+  4. El resultado lleva la zona y el hueso.
+- Sin zonas, la entidad se trata como caja o modelo de brushes (`0x41d3b0`), como en Quake 3.
+- Trazado con extensión (caja) contra entidades: `0x41fe80`; no usa los huesos.
 
 ## Pendiente (hito 5)
 

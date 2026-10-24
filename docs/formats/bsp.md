@@ -33,7 +33,9 @@ Lumps de colisión (hito 3):
 | 26 | Índices de colisión | `uint16` | confirmado |
 | 27 | Modelos (mundo + inline `*N`) | 48 B | confirmado (campos de brushes); resto probable |
 
-El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 9-11, 16-26, 28, 30-32) está
+| 31 | Caminos de la IA | variable | confirmado (ver "Lump 31") |
+
+El resto de lumps (1 lightbytes ≈ 5 lightmaps de 512×512×3, 9-11, 16-26, 28, 30, 32) está
 sin identificar o sin necesidad todavía. El árbol BSP (nodos, hojas) no se usa: el trazado
 recorre los brushes con una estructura de aceleración propia (ver "Colisión").
 
@@ -163,6 +165,30 @@ distinto de `"model" "*N"`. La suma de brushes de todos los modelos es exactamen
 ### Lump 29, entidades
 
 Texto Quake 3: bloques `{ "clave" "valor" ... }`, terminado en 0.
+
+### Lump 31, caminos de la IA
+
+Lo leen y escriben `gamex86.dll` (`0x2006f7a0`) y `CoDSP.exe` (llamadas 0x55, 0x56 y 0x57 del
+juego → `0x412700`/`0x4129a0`, que abren el `.bsp` y leen o **reescriben** el lump 31 con
+`g_connectpaths`). Validado con `tools/re/paths_probe.py` en los 31 mapas de campaña con
+caminos: se consume entero y el nº de nodos coincide con el de entidades `node_*`, en el mismo
+orden (burnville: 1467 nodos, 13 779 enlaces). Los mapas de multijugador no lo tienen.
+
+| Campo | Tipo |
+|---|---|
+| versión | i32 = 7 (con otro valor, el juego no carga los caminos) |
+| nº de nodos | u16; debe coincidir con los `node_*` ("Path node count mismatch in bsp file") |
+| por nodo | u16 nº de enlaces + enlaces × (u16 nodo destino, f32 distancia) |
+| visibilidad | `((n − 1) · n + 7) / 8` bytes de bits, comprimidos (abajo) |
+
+Compresión de la visibilidad, por cada byte de control `c` con signo:
+
+- `c < 0`: siguen `~c` bytes literales;
+- `c ≥ 0`: `c` bytes a cero y después un byte literal.
+
+Hay un bit por par ordenado de nodos distintos. Al cargar, el juego marca como "par de
+negociación" el enlace de un `node_negotiation_begin` (tipo 16) a un `node_negotiation_end`
+(tipo 17) con el mismo valor en un campo del nodo (probablemente `target`/`targetname`).
 
 ## Sistema de coordenadas (observado)
 

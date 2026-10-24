@@ -18,6 +18,10 @@ salen de `tools/re/gen_docs.py` y no se editan a mano.
 | `armas.md` | Archivo de arma, daño, zonas, disparo, retroceso | 5 | `G_Damage` y bala; falta dispersión del jugador |
 | `armas-campos.md` *(generado)* | 248 claves del archivo de arma | 5 | completo |
 | `ia.md` | Actores, sentients, precisión, dificultad | 6 | precisión contra el jugador |
+| `ejecutable.md` | Carga de las DLL y las 212 llamadas del juego al ejecutable | 4–7 | mapa por bloques |
+| `sonido.md` | Alias de sonido y aviso de fin de `playsound` | 4 | flujo completo; falta el ajuste por `pitch` |
+| `../formats/xanim.md` | Formato de animación y muestreo | 6 | formato validado con las 2957 animaciones |
+| `../formats/bsp.md` (lump 31) | Caminos de la IA | 6 | validado en los 31 mapas de campaña |
 
 ## Cobertura de built-ins (hito 4)
 
@@ -41,6 +45,10 @@ salen de `tools/re/gen_docs.py` y no se editan a mano.
 | `gen_docs.py` | Genera `gsc-api.md`, `armas-campos.md` y `dvars.md` |
 | `gsc_cobertura.py` | Cobertura de built-ins en los `.gsc` de la instalación |
 | `ExportFoley.java` | Script de Ghidra: exporta cadenas con referencias, funciones y decompilado |
+| `syscalls.py` | Recorre la tabla de saltos de un despachador y lista funciones y cadenas por caso |
+| `vm_api.py` | Tabla de funciones de la VM que el ejecutable pasa al juego, con usos |
+| `xanim_probe.py` | Valida el formato `xanim` contra todas las animaciones |
+| `paths_probe.py` | Valida el lump 31 (caminos) contra todos los BSP |
 
 Todas leen los archivos del juego de la instalación del usuario y escriben **fuera del repo**
 salvo `gen_docs.py`, que solo escribe nombres, direcciones y tipos. Las salidas de Ghidra
@@ -58,19 +66,25 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 GHIDRA_HEADLESS_MAXMEM=4G
   -scriptPath <repo>/tools/re -postScript ExportFoley.java ~/foley/salidas/gamex86
 ```
 
-El proyecto de Ghidra (`~/foley/ghidra/foley`) ya contiene `gamex86.dll` y
+El proyecto de Ghidra (`~/foley/ghidra/foley`) ya contiene `gamex86.dll`, `cgamex86.dll` y
 `CoDSP_1.5_memoria.bin` analizados; para volver a exportar sin reanalizar se usa
 `-process <archivo> -noanalysis`. El volcado de `CoDSP.exe` se carga como PE con base
 `0x400000`.
 
 ## Siguiente trabajo de RE por hito
 
+- **Validación con el original** (se verá más adelante): alternativa a `record`, grabando el
+  estado del jugador desde la memoria del proceso; y un `.gsc` de prueba en un pk3 aparte para
+  el orden de los hilos (`gsc.md`).
 - **3**: portar posturas, escaleras, agua, tumbado e inclinación (`pmove.md`, "Adelanto");
-  eventos de pasos y tipos de superficie; trazados de punto contra terreno y curvas.
-- **4**: identificar las 102 funciones de la VM del ejecutable (`gsc.md`); orden de reanudación
-  de hilos; `endon`; límites; `G_RunEntity`; disparadores.
+  eventos de pasos y tipos de superficie; portar los trazados de punto (`colision.md`, ya
+  leídos).
+- **4**: orden de reanudación de hilos; `endon` al borrar entidades; `G_RunEntity`;
+  disparadores; ajuste por `pitch` de la duración del sonido.
 - **5**: dispersión y retroceso del arma del jugador; granadas y proyectiles; `G_RadiusDamage`;
-  cuerpo a cuerpo; semilla de `rand()`.
-- **6**: pensamiento del actor, percepción, caminos, *root motion*.
+  cuerpo a cuerpo.
+- **6**: pensamiento del actor, percepción y A* sobre el lump 31; árbol de animación (pesos,
+  transiciones); muestreo de huesos.
 - **7**: HUD (`newhudelem`, campos y métodos en `gsc-api.md`), objetivos, guardado
-  (`G_SaveGame`/`G_LoadGame` en `gamex86.dll`, `0x2002c1b0`/`0x2002d3a0`).
+  (`G_SaveGame`/`G_LoadGame` en `gamex86.dll`, `0x2002c1b0`/`0x2002d3a0`); `cgamex86.dll` ya está
+  analizada (vista, balanceo, HUD) y `uix86.dll` falta.

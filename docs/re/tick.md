@@ -34,8 +34,17 @@
   original a 125 fps. Es una decisión de determinismo, no un valor del original. Las demos de
   validación deben grabarse a 125 fps.
 
+## Cuadro del cliente (`Com_Frame`, `0x430690`)
+
+- `com_maxfps` se registra con valor por defecto **0** (`0x42fde0`), es decir, sin límite. El
+  `configure.csv` del juego (ajustes por hardware) no lo toca.
+- Duración mínima de un cuadro: `1000 / com_maxfps` ms en **división entera**, o 1 ms si es 0.
+  El bucle espera activamente hasta cumplirla. Con `com_maxfps 125` el cuadro es exactamente de
+  8 ms, que es el paso fijo del proyecto.
+- Después, el tiempo pasa por `timescale` y `fixedtime` (`0x430620`) y llega al servidor
+  (`0x44cf10`, frames de 50 ms) y al cliente.
+
 ## Pendiente
 
 - Confirmar con la demo grabada.
-- Si el cliente de un jugador limita `com_maxfps` (valor por defecto y tope) y si `cl_maxpackets`
-  agrupa comandos.
+- Si `cl_maxpackets` agrupa comandos en un jugador.

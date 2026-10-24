@@ -43,8 +43,12 @@ brushes del BSP (ver `docs/re/modelos.md`).
 | nº de huesos relativos | u16 |
 | nº de huesos absolutos | u16 (siempre 1 en la instalación: `tag_origin` o sin nombre) |
 | hueso relativo × n | i8 padre (índice absoluto), 3 × f32 desplazamiento, 3 × i16 cuaternión (x, y, z) |
-| por cada hueso (absolutos + relativos) | cadena C nombre + 6 × f32 (límites del hueso) |
-| por cada hueso | u8 (clasificación de parte, para daño; sin interpretar) |
+| por cada hueso (absolutos + relativos) | cadena C nombre + 6 × f32 (caja de impacto del hueso en su espacio local: mín. y máx.) |
+| por cada hueso | u8 zona de impacto (índice en la lista de 19 zonas de `docs/re/armas.md`: 0 `none`, 1 `helmet`, 2 `head`...) |
+
+El cargador de `CoDSP.exe` (`0x47fa80`) añade a cada caja su centro (`(mín + máx) / 2`) y el
+cuadrado del radio de la esfera envolvente (`|máx − centro|²`); el trazado de balas los usa
+(`docs/re/armas.md`, "Trazado contra personajes"). Máximo 127 huesos por modelo.
 
 El cuaternión se guarda como `x, y, z / 32767` y `w = sqrt(1 − x² − y² − z²)`. La pose de
 reposo se obtiene componiendo desde el padre: `pos = pos_padre + rot_padre · desplazamiento`,

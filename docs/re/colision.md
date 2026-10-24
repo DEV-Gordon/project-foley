@@ -118,4 +118,19 @@ más bajo).
 Diferencia deliberada: las piezas se recorren después de los brushes y en el orden del lump, no
 hoja a hoja como el árbol BSP del original (mismo criterio que con los brushes).
 
-Pendiente: trazados de punto contra terreno (`0x419580`) y curvas (`0x415400`).
+### Trazados de punto (sin extensión)
+
+Leídos en `CoDSP.exe` 1.5; confianza **probable** hasta portarlos y probarlos.
+
+- **Terreno** (`0x419580`): recorre los triángulos de la pieza (registros de 72 bytes: plano del
+  triángulo y dos planos baricéntricos).
+  - Solo cuenta si el final queda detrás del plano y el inicio delante o encima.
+  - Fracción `(d_ini − 0.125) / (d_ini − d_fin)`, con el mismo ε que Quake 3,
+    `SURFACE_CLIP_EPSILON`.
+  - El punto de corte (sin ε) debe tener las coordenadas baricéntricas `u, v ≥ −0.001`
+    y `u + v ≤ 1.001` (constantes `0x55b5dc` y `0x55b718`).
+  - Si la fracción baja, guarda la normal del triángulo.
+- **Curvas** (`0x415400`): es `CM_TracePointThroughPatchCollide` de ioquake3:
+  - solo se ejecuta si `cm_playerCurveClip` (por defecto 1, `0x201`) está activa y el trazado es
+    un punto;
+  - fracción con ε 0.125 y comprobación de los biseles de cada faceta como en Quake 3.
