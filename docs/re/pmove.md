@@ -121,6 +121,39 @@ mismos puntos de guardado; es la aproximación más cercana disponible en .NET y
 en el último bit en casos raros. También se respeta el orden de las sumas de los productos
 escalares del original (p. ej. x·nx + z·nz + y·ny en PM_ClipVelocity).
 
+## Adelanto para el hito 3 (sin portar todavía)
+
+Lectura preliminar de las funciones pendientes de `gamex86.dll` 1.5. Confianza **supuesto** hasta
+portar y probar. El volcado de constantes por función está en la carpeta de trabajo
+(`pmove_consts.txt`, generado con `tools/re/consts.py`).
+
+- **Postura** (`0x20005a80`):
+  - Lee la altura de pie de `ps + 0x320` (70) y las vistas de `ps + 0x328`/`0x32c`/`0x330`
+    (agachado, de pie, tumbado).
+  - Altura de la caja al agacharse: **50** (`0x42480000`).
+  - Antes de tumbarse comprueba el espacio (`0x20002b60`) con ancho 30 (`0x41f00000`), igual que
+    `g_bounds_width`.
+  - Antes de levantarse o agacharse traza la caja nueva; si choca, no cambia.
+  - Usa ±45° (`0x2009a37c`/`0x2009a380`) en el giro tumbado y el escalón de tumbado 10.
+  - Eventos de cambio de postura: `0x8c` (de pie), `0x8d` (agachado), `0x8e` (tumbado).
+  - `pm_flags`: `0x1` tumbado, `0x2` agachado, `0x4` (se limpia al cambiar),
+    `0x20000`/`0x40000`/`0x80000` (peticiones de postura del script: `allowstand`/
+    `allowcrouch`/`allowprone`; error si se piden todas a la vez), `0x8000` (no puede tumbarse).
+  - En una torreta (`eFlags & 0x20000` sin `0x80000`), la postura viene de la torreta.
+  - Tiempos de transición: dvars `bg_duck2prone_time` y `bg_prone2duck_time` (400 ms). Giro
+    tumbado: `bg_prone_yawcap` (85) y `bg_prone_softyawedge` (1).
+- **Escaleras**:
+  - `0x200079e0` (detección): sonda a 6 unidades (`0x2009a2dc`) delante; umbral 8.
+  - `0x20007bf0` (movimiento): factor 2.5 (`0x2009a458`), 0.5 y 0.2, 16 unidades y giro de 180°.
+  - Límite de giro en escalera: `bg_ladder_yawcap` (100).
+- **Agua** (`0x200051c0`, PM_SetWaterLevel): niveles por puntos de contenido, como Quake 3. Con
+  agua a nivel 2, el daño de caída se reduce a la mitad (ver "Aterrizaje").
+- **Tumbado** (`0x200076b0`): usa la altura 70 (`0x2009a44c`) para comprobar el espacio sobre el
+  jugador.
+- **Transiciones de postura en PM_CmdScale** (`0x200053c0`): interpola entre 0 y 1.
+- **Sonido del follaje**: dvars `bg_foliagesnd_*` (velocidad mínima 40, máxima 180, intervalos
+  1500, 500 y 500 ms).
+
 ## No portado todavía
 
 Agua (PM_SetWaterLevel `0x200051c0`), postura y caja agachado/tumbado (`0x20005a80`),

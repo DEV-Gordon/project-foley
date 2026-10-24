@@ -47,6 +47,7 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
   /import/         Plugins de importación de editor
   /ui/
 /overrides/        Estructura vacía para assets remasterizados (contenido en .gitignore)
+/tools/re/         Herramientas de ingeniería inversa (sus salidas van fuera del repo)
 /docs/
   /re/             Hallazgos de ingeniería inversa: un .md por sistema
   /formats/        Especificación de cada formato tal como se entiende
@@ -60,7 +61,7 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
 - **Dos ritmos dentro de `/sim`:**
   - **Movimiento del jugador (pmove)**: un paso por comando de usuario, fijo en **8 ms (125 Hz)**. En id Tech 3 el movimiento depende de la tasa de cuadros del cliente (de ahí los famosos saltos a 125 fps), así que se fija una tasa constante para que sea determinista.
   - **Frame del mundo** (scripts GSC, IA, entidades, `wait`): cada **50 ms (20 Hz)**, valor de referencia de id Tech 3.
-- Ambos valores están **por confirmar** contra CoD1 con REA y los configs, sobre todo si el modo de un jugador se comporta igual que el multijugador. Los hallazgos van en `docs/re/tick.md`.
+- El frame del mundo de 50 ms está **confirmado** en el binario de un jugador (fijo en el código, sin `sv_fps`). En el original, el pmove va por comando de usuario a la tasa de cuadros del cliente (`pmove_fixed 0`); fijarlo en 8 ms es una decisión del proyecto para ser deterministas, y equivale a jugar a 125 fps. Detalles en `docs/re/tick.md`.
 - Godot: `physics_ticks_per_second = 125`. Cada tick avanza la simulación 8 ms; la simulación dispara el frame del mundo cuando su acumulador llega a 50 ms. Con la interpolación de física de Godot activada, el render queda fluido a cualquier fps.
 - Toda la lógica de gameplay vive en `/sim` y avanza solo con este reloj, nunca desde `_process`.
 
@@ -133,7 +134,8 @@ Cada hito incluye la presentación **original** de lo que trae (cómo se ve y se
 ## Decisiones abiertas
 
 - Misión del vertical slice: **misión 3 de la campaña, Sainte-Mère-Église de noche** (la incluida en la demo original). Archivo de mapa: `maps/burnville.bsp` (confirmado con el inventario del hito 1).
-- Tiempos de simulación (8 ms de pmove, 50 ms de frame del mundo): **por confirmar** contra el original.
+- Tiempos de simulación: frame del mundo de 50 ms **confirmado**; pmove fijo en 8 ms por decisión del proyecto (el original depende de los fps). Ver `docs/re/tick.md`.
+- Ingeniería inversa adelantada para los hitos 3–7: índice y estado en `docs/re/README.md`; herramientas en `tools/re/`.
 - Versión exacta de Godot: 4.7.2 estable, edición .NET (anotada en `docs/decisions/0001-version-godot.md`).
 - Iluminación: **decidido**, nueva con Godot en todos los modos, sin lightmaps originales.
 - Hito 2: **cerrado** en presentación original (shaders, cielo, luna, coronas, LODs). Supuestos de presentación pendientes de verificar contra el juego: marcados con `TODO(presentación)` en `docs/formats/shader.md` y `docs/formats/xmodel.md`.

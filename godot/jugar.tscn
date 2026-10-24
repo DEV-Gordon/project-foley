@@ -20,6 +20,7 @@ sky = SubResource("Sky_4iyw2")
 ambient_light_source = 3
 ssr_enabled = true
 ssao_enabled = true
+ssil_enabled = true
 sdfgi_enabled = true
 volumetric_fog_enabled = true
 volumetric_fog_density = 0.003

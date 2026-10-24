@@ -4,25 +4,38 @@
 
 | Ritmo | Valor | Dónde | Fuente | Confianza |
 |---|---|---|---|---|
-| Comando de usuario / pmove | 8 ms (125 Hz) | `Pmove.Move` (troceo fijo) | CLAUDE.md; equivale a `pmove_fixed 1` + `pmove_msec 8` de ioquake3 | **por confirmar** |
-| Frame del mundo (GSC, IA, entidades) | 50 ms (20 Hz) | aún no implementado | CLAUDE.md; `sv_fps 20` de id Tech 3 | **por confirmar** |
+| Comando de usuario / pmove | 8 ms (125 Hz) | `Pmove.Move` (troceo fijo) | CLAUDE.md; equivale a `pmove_fixed 1` + `pmove_msec 8` | **elección del proyecto** (el original no es fijo, ver abajo) |
+| Frame del mundo (GSC, IA, entidades) | 50 ms (20 Hz) | aún no implementado | `CoDSP.exe` y `gamex86.dll` 1.5 | **confirmado** (binario) |
 
-## Por qué se fija el pmove
+## Frame del mundo: 50 ms (confirmado)
 
-En id Tech 3, sin `pmove_fixed`, cada comando dura lo que dure el cuadro del cliente
-(troceado a 66 ms como máximo en `Pmove`), así que el movimiento depende de los fps. Fijar
-8 ms hace la simulación determinista. Si CoD1 de un jugador no usa `pmove_fixed`, la
-fidelidad exacta contra una demo dependerá de los fps con que se grabó: la demo debe
-grabarse a 125 fps (`com_maxfps 125`).
+- `CoDSP.exe` (`0x0044cf10`) acumula el tiempo real de cada cuadro. Mientras el acumulado sea
+  ≥ 50 (`0x32`), resta 50 y ejecuta un frame del juego: mensaje 10 de `vmMain` (inicio) y luego
+  mensaje 11 (`G_RunFrame`). Con menos de 50 no ejecuta ninguno.
+- `gamex86.dll`, mensaje 10 (`0x2001f090`): `level.time += 50` (constante `0x32`).
+- En un jugador **no existe `sv_fps`**: la cadena no está en el ejecutable y el 50 está fijo en
+  el código. `sv_framerate_smoothing` solo reparte el trabajo de un frame entre varios cuadros de
+  render; no cambia la duración del frame.
+- Orden de lo que pasa dentro del frame: `entidades.md`.
 
-## Evidencia nueva
+## Movimiento del jugador: un pmove por comando de usuario
 
-- `pmove_fixed` y `pmove_msec` existen en CoD1: Timedemo1.dm_2 (multijugador) los trae en la
-  systeminfo con `pmove_fixed 0`, `pmove_msec 8`. El valor 8 coincide con el elegido.
-- PmoveSingle (gamex86.dll `0x20007fd0`) limita cada paso a 1..200 ms, como Quake 3.
+- El servidor (`0x00449050`) recibe del cliente un paquete con hasta 32 comandos de usuario
+  ("cmdCount > MAX_PACKET_USERCMDS"). Por **cada** comando nuevo llama a `ClientThink` del juego
+  (mensaje 6 de `vmMain`, `0x200129c0`), que ejecuta el pmove (`0x20012430` → `0x20008580` →
+  `PmoveSingle` `0x20007fd0`).
+- Así que el pmove va al ritmo de los comandos del cliente, es decir, de sus cuadros, como en
+  Quake 3. No va al ritmo del frame del mundo.
+- `pmove_fixed` (por defecto **0**) y `pmove_msec` (por defecto 8) existen en `gamex86.dll` de un
+  jugador (tabla de dvars, ver `dvars.md`). Con `pmove_fixed 0`, cada comando dura lo que dure el
+  cuadro del cliente (`PmoveSingle` lo limita a 1..200 ms). El movimiento original depende, por
+  tanto, de los fps (`com_maxfps`).
+- El proyecto fija 8 ms (equivalente a `pmove_fixed 1`, `pmove_msec 8`), lo mismo que jugar el
+  original a 125 fps. Es una decisión de determinismo, no un valor del original. Las demos de
+  validación deben grabarse a 125 fps.
 
 ## Pendiente
 
-- REA: buscar en `CoDSP.exe` / `gamex86.dll` si existe `pmove_fixed`/`pmove_msec` y el valor
-  de `sv_fps` en un jugador.
 - Confirmar con la demo grabada.
+- Si el cliente de un jugador limita `com_maxfps` (valor por defecto y tope) y si `cl_maxpackets`
+  agrupa comandos.
