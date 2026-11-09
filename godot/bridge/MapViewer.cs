@@ -2,24 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Foley.Formats.Bsp;
-using Foley.Formats.Materials;
-using Foley.Formats.Pk3;
 using Godot;
 
 /// <summary>
-/// Visor del mapa (hito 2): lee el BSP y los pk3 de la instalación del jugador y construye la
-/// malla visible. Solo presentación: no genera colisión ni toca la simulación.
+/// Visor del mapa en el juego: construye el mapa con <see cref="MapBuilder"/> y añade lo propio del
+/// juego (evento <see cref="MapLoaded"/>, HUD, teclas de inspección L y B, coronas y destellos).
+/// Solo presentación: no genera colisión ni toca la simulación.
 /// </summary>
 public partial class MapViewer : Node3D
 {
 	/// <summary>Ruta lógica del mapa dentro de los pk3.</summary>
 	[Export] public string MapPath { get; set; } = "maps/burnville.bsp";
-
-	// Escala solo visual (unidades del original -> metros). La simulación conserva las unidades originales.
-	// TODO(fidelidad): valor provisional de presentación; no sale de ninguna fuente del juego.
-	private const float MetersPerUnit = 0.03f;
-
-	private readonly Dictionary<string, Texture2D?> _textures = new();
 
 	/// <summary>Se emite al terminar de construir el mapa, con el BSP leído (lo usa el controlador del jugador).</summary>
 	public event Action<BspFile>? MapLoaded;
@@ -39,214 +32,62 @@ public partial class MapViewer : Node3D
 		// Debe activarse antes de crear las mallas para que el modo alambre tenga datos.
 		RenderingServer.SetDebugGenerateWireframes(true);
 
-		var root = ResolveGameRoot();
-		if (root is null)
+		if (!MapBuilder.TryFindPk3Directory(out var pk3Dir, out var error))
 		{
-			GD.PushError("No se encontró la instalación del juego. Define COD1_PATH o 'game_path' en user://foley.cfg.");
-			return;
-		}
-		var pk3Dir = Pk3Locator.FindPk3Directory(root);
-		if (pk3Dir is null)
-		{
-			GD.PushError($"No hay archivos .pk3 en '{root}'.");
+			GD.PushError(error);
 			return;
 		}
 
-		var sw = System.Diagnostics.Stopwatch.StartNew();
-		BspFile bsp;
-		using (var pk3 = new Pk3Collection(pk3Dir))
-		{
-			bsp = BspFile.Read(pk3.ReadAllBytes(MapPath));
-			var resolver = new MaterialResolver(pk3);
-			_stages = new StageMaterials(path =>
-				resolver.FindTexture(path) is { } file ? LoadTexture(pk3, file) : null);
-			BuildMap(bsp, resolver);
-			BuildModels(bsp, pk3, resolver);
-			BuildSky(bsp, pk3, resolver);
-			BuildFlares(bsp, pk3, resolver);
-			_stages = null;
-		}
-		GD.Print($"[MapViewer] {MapPath}: {bsp.Surfaces.Length} superficies, {bsp.Vertices.Length} vértices, {sw.ElapsedMilliseconds} ms");
+		var (settings, overrides) = LoadLighting();
+		var map = MapBuilder.Build(MapPath, pk3Dir, settings, overrides, this);
+		_environment = map.Environment;
+		BuildFlares(map);
 
-		PlaceCamera(bsp, args);
-		AddLighting(bsp);
+		PlaceCamera(map.Bsp, args);
 		AddHud();
-		MapLoaded?.Invoke(bsp);
+		MapLoaded?.Invoke(map.Bsp);
 
 		if (args.TryGetValue("shot", out var shotPath)) _ = TakeScreenshotAndQuit(shotPath, args.TryGetValue("wait", out var w) ? Parse(w) : 0f);
 	}
 
-	private StageMaterials? _stages;
-
-	private void BuildMap(BspFile bsp, MaterialResolver resolver)
-	{
-		var bySurfaceMaterial = new Dictionary<int, List<BspSurface>>();
-		foreach (var s in bsp.Surfaces)
-		{
-			if (!bySurfaceMaterial.TryGetValue(s.MaterialIndex, out var list))
-				bySurfaceMaterial[s.MaterialIndex] = list = new List<BspSurface>();
-			list.Add(s);
-		}
-
-		int skippedSky = 0, skippedNoDraw = 0, untextured = 0, drawnSurfaces = 0;
-		foreach (var (materialIndex, surfaces) in bySurfaceMaterial)
-		{
-			var resolved = resolver.Resolve(bsp.Materials[materialIndex].Name);
-			if (resolved.IsSky) { skippedSky += surfaces.Count; continue; }
-			if (resolved.NoDraw) { skippedNoDraw += surfaces.Count; continue; }
-
-			var mesh = BuildMesh(bsp, surfaces, StageMaterials.Deform(resolved.Shader));
-			var material = _stages!.Build(resolved.Shader);
-			if (material is null)
-			{
-				untextured++;
-				material = new StandardMaterial3D { AlbedoColor = new Color(1f, 0f, 1f) };
-			}
-			mesh.SurfaceSetMaterial(0, material);
-			AddChild(new MeshInstance3D { Mesh = mesh, Name = resolved.Name.Replace('/', '_') });
-			drawnSurfaces += surfaces.Count;
-		}
-		GD.Print($"[MapViewer] dibujadas {drawnSurfaces} superficies; omitidas: cielo {skippedSky}, nodraw {skippedNoDraw}; materiales sin textura: {untextured}");
-	}
-
-	private static ArrayMesh BuildMesh(BspFile bsp, List<BspSurface> surfaces, StageMaterials.SpriteDeform deform)
-	{
-		var vertexTotal = 0;
-		var indexTotal = 0;
-		foreach (var s in surfaces) { vertexTotal += s.VertexCount; indexTotal += s.IndexCount; }
-
-		var positions = new Vector3[vertexTotal];
-		var normals = new Vector3[vertexTotal];
-		var uv = new Vector2[vertexTotal];
-		var uv2 = new Vector2[vertexTotal];
-		var colors = new Color[vertexTotal];
-		var indices = new int[indexTotal];
-
-		var v = 0;
-		var i = 0;
-		foreach (var s in surfaces)
-		{
-			var baseVertex = v;
-			for (var k = 0; k < s.VertexCount; k++, v++)
-			{
-				var src = bsp.Vertices[(int)s.FirstVertex + k];
-				positions[v] = ToGodot(src.X, src.Y, src.Z) * MetersPerUnit;
-				normals[v] = ToGodot(src.Nx, src.Ny, src.Nz);
-				uv[v] = new Vector2(src.U, src.V);
-				uv2[v] = new Vector2(src.LmU, src.LmV);
-				// Color de vértice tal cual (rgbGen/alphaGen vertex lo usan; el shader lo linealiza).
-				colors[v] = new Color(src.R / 255f, src.G / 255f, src.B / 255f, src.A / 255f);
-			}
-			// El giro horario del original coincide con el frontal de Godot al ser una rotación propia.
-			for (var k = 0; k < s.IndexCount; k++, i++)
-				indices[i] = baseVertex + bsp.Indices[(int)s.FirstIndex + k];
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = positions;
-		arrays[(int)Mesh.ArrayType.Normal] = normals;
-		arrays[(int)Mesh.ArrayType.TexUV] = uv;
-		arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-
-		var mesh = new ArrayMesh();
-		// deformVertexes autosprite/autosprite2: datos por vértice en CUSTOM0/CUSTOM1.
-		StageMaterials.AddSurface(mesh, arrays, positions, deform);
-		return mesh;
-	}
-
-	/// <summary>Ejes del original (Z arriba, diestro) a Godot (Y arriba, -Z adelante): rotación propia.</summary>
-	private static Vector3 ToGodot(float x, float y, float z) => new(x, z, -y);
-
 	/// <summary>Posición de la simulación (unidades y ejes originales) a posición de Godot (metros, Y arriba).</summary>
-	public static Vector3 SimToGodot(float x, float y, float z) => ToGodot(x, y, z) * MetersPerUnit;
-
-	/// <summary>Carga una textura del pk3 (DDS, TGA o JPG) con mipmaps; cacheada por ruta.</summary>
-	private Texture2D? LoadTexture(Pk3Collection pk3, string path)
-	{
-		if (_textures.TryGetValue(path, out var cached)) return cached;
-
-		Texture2D? result = null;
-		try
-		{
-			var bytes = pk3.ReadAllBytes(path);
-			var image = new Image();
-			var err = path switch
-			{
-				_ when path.EndsWith(".dds") => image.LoadDdsFromBuffer(bytes),
-				_ when path.EndsWith(".tga") => image.LoadTgaFromBuffer(bytes),
-				_ when path.EndsWith(".jpg") => image.LoadJpgFromBuffer(bytes),
-				_ => Error.FileUnrecognized,
-			};
-			if (err != Error.Ok)
-			{
-				GD.PushWarning($"[MapViewer] no se pudo decodificar {path}: {err}");
-			}
-			else
-			{
-				if (!TryCustomMipmaps(pk3, path, ref image) && !image.IsCompressed() && !image.HasMipmaps())
-					image.GenerateMipmaps();
-				result = ImageTexture.CreateFromImage(image);
-			}
-		}
-		catch (Exception e)
-		{
-			GD.PushWarning($"[MapViewer] error cargando {path}: {e.Message}");
-		}
-		_textures[path] = result;
-		return result;
-	}
+	public static Vector3 SimToGodot(float x, float y, float z) => MapBuilder.SimToGodot(x, y, z);
 
 	/// <summary>
-	/// Cadena de mips hecha a mano: las texturas <c>nombre#0</c> traen sus niveles siguientes como
-	/// <c>nombre#1</c>, <c>nombre#2</c>... (56 en la instalación; p. ej. los cables, para que no
-	/// desaparezcan de lejos). Se usan esos niveles y los más pequeños que falten se generan
-	/// reduciendo el último. Supuesto sin verificar en el ejecutable (REA): solo hay evidencia de los datos.
+	/// Iluminación del mapa: si existe el rig <c>res://render/maps/&lt;mapa&gt;.tscn</c>, se instancia en el
+	/// origen (sus luces manuales se suman a las del BSP) y valen sus ajustes y sus ajustes por luz; si
+	/// no, <c>default.tres</c>; si tampoco, los valores del código.
 	/// </summary>
-	private static bool TryCustomMipmaps(Pk3Collection pk3, string path, ref Image level0)
+	private (MapLighting settings, Godot.Collections.Array<MapLightOverride>? overrides) LoadLighting()
 	{
-		var dot = path.LastIndexOf('.');
-		if (dot < 2 || path[dot - 2] != '#' || path[dot - 1] != '0') return false;
-		var stem = path[..(dot - 1)];
-		if (level0.IsCompressed()) level0.Decompress();
-		if (level0.HasMipmaps()) level0.ClearMipmaps();
-		level0.Convert(Image.Format.Rgba8);
-
-		var levels = new List<Image> { level0 };
-		int w = level0.GetWidth(), h = level0.GetHeight();
-		for (var n = 1; w > 1 || h > 1; n++)
+		var rigPath = $"res://render/maps/{System.IO.Path.GetFileNameWithoutExtension(MapPath)}.tscn";
+		if (ResourceLoader.Exists(rigPath) && ResourceLoader.Load(rigPath) is PackedScene scene)
 		{
-			w = Math.Max(1, w / 2);
-			h = Math.Max(1, h / 2);
-			Image? next = null;
-			foreach (var ext in new[] { ".dds", ".tga", ".jpg" })
+			var node = scene.Instantiate();
+			if (node is MapLightRig rig)
 			{
-				var file = stem + n + ext;
-				if (!pk3.Contains(file)) continue;
-				var img = new Image();
-				var bytes = pk3.ReadAllBytes(file);
-				var e = ext == ".dds" ? img.LoadDdsFromBuffer(bytes) : ext == ".tga" ? img.LoadTgaFromBuffer(bytes) : img.LoadJpgFromBuffer(bytes);
-				if (e != Error.Ok) break;
-				if (img.HasMipmaps()) img.ClearMipmaps();
-				if (img.IsCompressed()) img.Decompress();
-				img.Convert(Image.Format.Rgba8);
-				if (img.GetWidth() == w && img.GetHeight() == h) next = img;
-				break;
+				rig.Transform = Transform3D.Identity;
+				AddChild(rig);
+				GD.Print($"[MapViewer] iluminación: {rigPath} ({rig.AjustesPorLuz.Count} ajustes por luz, {CountLights(rig)} luces manuales)");
+				return (rig.EffectiveLighting(), rig.AjustesPorLuz);
 			}
-			if (next is null)
-			{
-				next = (Image)levels[^1].Duplicate();
-				next.Resize(w, h, Image.Interpolation.Bilinear);
-			}
-			levels.Add(next);
+			node.Free();
+			GD.PushWarning($"[MapViewer] {rigPath} no tiene un MapLightRig como raíz; se ignora.");
 		}
-		if (levels.Count < 2) return false;
-		var data = new List<byte>();
-		foreach (var l in levels) data.AddRange(l.GetData());
-		level0 = Image.CreateFromData(level0.GetWidth(), level0.GetHeight(), true, Image.Format.Rgba8, data.ToArray());
-		return true;
+		if (MapLightRig.LoadDefaultLighting() is { } d)
+		{
+			GD.Print($"[MapViewer] iluminación: {MapLightRig.DefaultLightingPath}");
+			return (d, null);
+		}
+		GD.Print("[MapViewer] iluminación: valores por defecto del código");
+		return (new MapLighting(), null);
+	}
+
+	private static int CountLights(Node n)
+	{
+		var count = 0;
+		foreach (var c in n.GetChildren()) count += (c is Light3D ? 1 : 0) + CountLights(c);
+		return count;
 	}
 
 	private void PlaceCamera(BspFile bsp, Dictionary<string, string> args)
@@ -264,7 +105,7 @@ public partial class MapViewer : Node3D
 			if (p.Length == 3)
 			{
 				var q = new Vector3(Parse(p[0]), Parse(p[1]), Parse(p[2]));
-				pos = ToGodot(q.X, q.Y, q.Z) * MetersPerUnit + new Vector3(0, 1.0f, 0);
+				pos = MapBuilder.SimToGodot(q.X, q.Y, q.Z) + new Vector3(0, 1.0f, 0);
 			}
 			break;
 		}
@@ -348,19 +189,5 @@ public partial class MapViewer : Node3D
 			else result[a[2..eq]] = a[(eq + 1)..];
 		}
 		return result;
-	}
-
-	/// <summary>COD1_PATH, o 'game_path' en user://foley.cfg. Nunca una ruta fija.</summary>
-	private static string? ResolveGameRoot()
-	{
-		var env = System.Environment.GetEnvironmentVariable("COD1_PATH");
-		if (!string.IsNullOrWhiteSpace(env)) return env;
-		var cfg = new ConfigFile();
-		if (cfg.Load("user://foley.cfg") == Error.Ok)
-		{
-			var p = (string)cfg.GetValue("game", "game_path", "");
-			if (!string.IsNullOrWhiteSpace(p)) return p;
-		}
-		return null;
 	}
 }

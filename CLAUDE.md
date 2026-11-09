@@ -82,7 +82,9 @@ GPL-2.0-or-later, para poder portar código de ioquake3 (GPL) como base del comp
 - Decidido desde el inicio: **no se usan los lightmaps originales** en ningún modo; las texturas se tratan como albedo y la luz es de Godot.
 - Las luces de cada mapa imitan la ubicación y el carácter de las del original (las entidades de luz del BSP sirven de guía), porque lo oscuro o visible de una zona afecta a cómo se juega.
 - GI en tiempo real con **SDFGI**: las mallas se generan al cargar desde el BSP del jugador, así que no hay nada que hornear con LightmapGI. Las UV de lightmap se siguen cargando como UV2 por si más adelante se hornea (ver `docs/decisions/0003-iluminacion.md`).
-- Las luces de cada mapa se definen en un recurso por mapa (`render/maps/<mapa>.tres`), no en código.
+- Ajustes en cascada: `render/maps/default.tres` para todos los mapas y, si existe, el **rig** del mapa (`render/maps/<mapa>.tscn`, raíz `MapLightRig`) con sus ajustes, ajustes por luz del BSP y luces puestas a mano.
+- En el editor, el rig tiene una vista previa del mapa construida con `MapBuilder` (el mismo constructor que el juego) como hijos sin Owner: se ilumina a mano viendo el mapa y nunca se guarda nada del juego. Un test (`MapRigContentTests`) falla si un rig contiene geometría o texturas.
+- Las propiedades del `Environment` que pisa el código están listadas en la ADR 0003; la escena solo guarda SSAO, SSR y niebla. Paso a paso en `docs/flujo-iluminacion.md`.
 
 ## Fuentes de verdad para la fidelidad (en orden)
 
@@ -138,7 +140,7 @@ Cada hito incluye la presentación **original** de lo que trae (cómo se ve y se
 - Ingeniería inversa adelantada para los hitos 3–7: índice y estado en `docs/re/README.md`; herramientas en `tools/re/`.
 - Versión exacta de Godot: 4.7.2 estable, edición .NET (anotada en `docs/decisions/0001-version-godot.md`).
 - Iluminación: **decidido**, nueva con Godot en todos los modos, sin lightmaps originales.
-- Hito 2: **cerrado** en presentación original (shaders, cielo, luna, coronas, LODs). Supuestos de presentación pendientes de verificar contra el juego: marcados con `TODO(presentación)` en `docs/formats/shader.md` y `docs/formats/xmodel.md`.
+- Hito 2: **cerrado** en presentación original (shaders, cielo, luna, coronas, LODs) y con el rig de iluminación por mapa (ADR 0003). Solo quedan supuestos de presentación por verificar contra el juego, marcados con `TODO(presentación)`: orden `sort` de las palabras propias de CoD1, tamaño del sprite de la luna, `zcutoff`/`zfadeout` y `fadein`/`fadeout` de coronas y destellos, constantes de destellos (`docs/formats/shader.md`) y distancia de los LODs sin `r_lodScale` (`docs/formats/xmodel.md`).
 
 ## Glosario
 

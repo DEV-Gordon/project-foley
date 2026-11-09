@@ -94,7 +94,7 @@ que falten. Confianza: probable (evidencia en los datos; falta ver el cargador d
 `skyParms env/burnville4c 512 -`: 6 imágenes `env/burnville4c_{rt,lf,bk,ft,up,dn}.tga`. Asignación
 de caras de id Tech 3 (tr_sky.c, `suf[]`, `sky_texorder[]` y `st_to_vec[]`): +X `rt`, −X `lf`,
 +Y `bk`, −Y `ft`, +Z `up`, −Z `dn`. El visor dibuja la caja en el cielo de Godot
-(`godot/bridge/MapViewer.Sky.cs`).
+(`godot/bridge/MapBuilder.cs`, `BuildSky`).
 
 `sunfile burnville` → `scripts/burnville.sun` (pares `clave "valor"`): `r_sunsprite_shader
 gfx/sun/moon_full` (mezcla aditiva) con `r_sunsprite_size 32`, más destello y deslumbramiento. El

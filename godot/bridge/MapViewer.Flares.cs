@@ -1,7 +1,4 @@
 using System.Collections.Generic;
-using Foley.Formats.Bsp;
-using Foley.Formats.Materials;
-using Foley.Formats.Pk3;
 using Foley.Sim.Collision;
 using Godot;
 
@@ -12,37 +9,33 @@ using Godot;
 /// </summary>
 public partial class MapViewer
 {
-	private void BuildFlares(BspFile bsp, Pk3Collection pk3, MaterialResolver resolver)
+	private void BuildFlares(MapBuilder map)
 	{
 		var coronas = new List<Flares.Corona>();
-		foreach (var e in bsp.Entities)
+		foreach (var e in map.Bsp.Entities)
 		{
-			if (e.ClassName != "corona" || !TryParseVector(e.Get("origin"), out var o)) continue;
-			var c = LightColor(e.Get("dl_color") ?? e.Get("_color"), Vector3.One);
+			if (e.ClassName != "corona" || !MapBuilder.TryParseVector(e.Get("origin"), out var o)) continue;
+			var c = MapBuilder.LightColor(e.Get("dl_color") ?? e.Get("_color"), Vector3.One);
 			var corona = new Flares.Corona
 			{
 				SimOrigin = o,
 				Color = new Color(c.X, c.Y, c.Z),
-				Scale = Num(e.Get("scale"), 1f),
+				Scale = MapBuilder.Num(e.Get("scale"), 1f),
 			};
 			if (e.Get("zcutoff") is { } zc && e.Get("zfadeout") is { } zf)
 			{
-				corona.ZCutoff = Num(zc, 0);
-				corona.ZFadeOut = Num(zf, 0);
+				corona.ZCutoff = MapBuilder.Num(zc, 0);
+				corona.ZFadeOut = MapBuilder.Num(zf, 0);
 			}
 			coronas.Add(corona);
 		}
-		if (coronas.Count == 0 && _sunFlareTexture is null) return;
-
-		Texture2D? coronaTex = null;
-		if (resolver.FindShader("flareShader")?.FirstMap is { } map && resolver.FindTexture(map) is { } file)
-			coronaTex = LoadTexture(pk3, file);
+		if (coronas.Count == 0 && map.SunFlareTexture is null) return;
 
 		var flares = new Flares { Name = "Destellos" };
-		flares.Setup(ClipMap.FromBsp(bsp), coronas, coronaTex, _sunDirection, _sunFile, _sunFlareTexture);
+		flares.Setup(ClipMap.FromBsp(map.Bsp), coronas, map.CoronaTexture, map.SunDirection, map.SunFile, map.SunFlareTexture);
 		var layer = new CanvasLayer { Layer = -1 };
 		layer.AddChild(flares);
 		AddChild(layer);
-		GD.Print($"[MapViewer] destellos: {coronas.Count} coronas, destello del astro {(_sunFlareTexture is null ? "no" : "sí")}");
+		GD.Print($"[MapViewer] destellos: {coronas.Count} coronas, destello del astro {(map.SunFlareTexture is null ? "no" : "sí")}");
 	}
 }
