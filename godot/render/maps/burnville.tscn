@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://mld0a8indx8l"]
+
+[ext_resource type="Script" uid="uid://dr1xn20te380e" path="res://bridge/MapLightRig.cs" id="1_53vuu"]
+[ext_resource type="Script" uid="uid://iu7jedynocjq" path="res://bridge/MapLighting.cs" id="2_8dbl8"]
+[ext_resource type="Script" uid="uid://bj2kn153qis26" path="res://bridge/MapLightOverride.cs" id="3_8dbl8"]
+
+[sub_resource type="Resource" id="Resource_gyxng"]
+script = ExtResource("2_8dbl8")
+SunEnergyScale = 0.5
+SunAngularDistance = 1.5
+Exposure = 2.0
+
+[sub_resource type="Resource" id="Resource_ndmp6"]
+script = ExtResource("3_8dbl8")
+Id = "320 -19326 257"
+
+[node name="Burnville" type="Node3D" unique_id=1663641945]
+script = ExtResource("1_53vuu")
+Iluminacion = SubResource("Resource_gyxng")
+AjustesPorLuz = Array[ExtResource("3_8dbl8")]([SubResource("Resource_ndmp6")])
+metadata/_custom_type_script = "uid://dr1xn20te380e"
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=2130351454]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.112848, 1.5902026, 684.73065)
+light_color = Color(0.905522, 0.07735758, 0.54985535, 1)
+light_energy = 16.0
+light_volumetric_fog_energy = 0.0
